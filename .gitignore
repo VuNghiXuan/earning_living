@@ -42,7 +42,8 @@ dist/
 # Hệ thống sẽ tự tạo output, không nên đưa file dữ liệu tiệm lên GitHub
 output/
 input/
-
+mota/
+.mp4
 # --- IDE & OS rác ---
 .vscode/
 .idea/

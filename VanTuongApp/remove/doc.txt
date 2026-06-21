@@ -1,0 +1,119 @@
+================================================================================
+TÀI LIỆU ĐẶC TẢ YÊU CẦU & KIẾN TRÚC PHẦN MỀM QUẢN LÝ BẢO QUẢN TRANG BỊ V1.0
+================================================================================
+
+I. TỔNG QUAN HỆ THỐNG (SYSTEM OVERVIEW)
+--------------------------------------------------------------------------------
+Phần mềm là một ứng dụng chạy cục bộ (Desktop Offline) trên nền tảng Windows/Linux 
+bằng ngôn ngữ Python & thư viện đồ họa PySide6 (Qt). Mục tiêu chính là tự động hóa 
+quy trình lập kế hoạch và báo cáo bảo quản định kỳ (BQDP - KSĐK) cho các trang bị 
+kỹ thuật thuộc các nhóm chuyên trách (Ví dụ: Nhóm Sô na, Nhóm Thông tin...).
+
+Hệ thống đóng vai trò như một bộ quản lý định mức kỹ thuật: Nạp dữ liệu định mức 
+cố định (file đầu vào), áp cấu hình nhân sự/thời gian thực tế của ngày hôm đó để 
+tự động tính toán dòng thời gian liên mạch (Timeline Scheduler), hỗ trợ chỉnh sửa 
+trực quan và xuất file báo cáo tổng hợp chuẩn (.docx) đầu ra.
+
+
+II. BẢNG ĐẶC TẢ YÊU CẦU CHỨC NĂNG HỆ THỐNG (SRS)
+--------------------------------------------------------------------------------
+| STT | Phân hệ ứng dụng | Tên chức năng | Mô tả nghiệp vụ & Logic vận hành
+|---|---|---|---|
+| 1 | Giao diện chính | Quản lý Kế hoạch | Giao diện phẳng phong cách Excel (Excel Grid Mode)
+|   | (Desktop GUI)   | Bảo quản Thiết bị| Khối bộ lọc phía trên độc lập, khối ma trận lưới 
+|   |                 |                   | chiếm 70% diện tích, các ô vuông vức liền mạch viền 1px.
+|---|---|---|---|
+| 2 | Quản lý đầu vào | Tự động đọc và   | Hệ thống nạp file Word gốc để bóc tách định mức.
+|   | (Data Input)    | Phân tích Phiếu   | - Đọc chính xác Tiếng Nga (МГК-400ЭМ, ПЕРЕМОТКА...).
+|   |                 | Công Nghệ         | - Hiển thị đúng ký hiệu đặc biệt: →, ←, ↓, ↑, ±0,6 м/с, MΩ.
+|   |                 |                   | - Đổ ma trận lên lưới, tích hợp Checkbox tích chọn.
+|   |                 |                   | - Thay tên cột "Ghi chú" thành cột "Kết quả".
+|---|---|---|---|
+| 3 | Bộ lọc thông minh| Liên kết Bộ lọc  | - Chọn "Nhóm" -> Tự động lọc các "Trang bị" thuộc nhóm đó.
+|   | (Data Filter)   | Điều kiện        | - Mỗi máy có 4 loại phiếu: Tuần (1), Tháng (2), Quý (3), 
+|   |                 |                   |   Trước/Sau đi biển (4).
+|   |                 |                   | - Chọn phiếu Tuần/Đi biển -> Chỉ hiện 1 ô nhập Ngày.
+|   |                 |                   | - Chọn phiếu Tháng/Quý -> Mở dải chọn Từ ngày - Đến ngày.
+|---|---|---|---|
+| 4 | Bộ não Scheduler| Tự động tính     | - Người dùng nhập Giờ bắt đầu (Ví dụ: 07:00) và số phút định
+|   | (Time Calculator| Timeline thực địa|   mức -> Hệ thống tự sinh dải giờ (07:00-07:30, 07:30-07:45).
+|   |                 |                   | - Người dùng nhập "Số nhân viên", hệ thống tự điền vào lưới.
+|   |                 |                   | - Bỏ tích một dòng -> Lưới tự động dồn mốc giờ phía sau.
+|---|---|---|---|
+| 5 | Lưu trữ & Output| Xuất báo cáo &    | - Bấm "Xuất Word" -> Tạo file tổng hợp sạch chứa các dòng việc
+|   | (Report Engine) | Quản lý Lịch sử  |   đã tích chọn, hiển thị dải giờ dạng hh:mm, đính kèm form nhận xét.
+|   |                 |                   | - Lưu phiếu vào SQLite. Tab lịch sử cho phép tìm kiếm phiếu cũ,
+|   |                 |                   |   bấm "Mở lại" để đổ ngược dữ liệu lên lưới chỉnh sửa kết quả.
+
+
+III. TRÌNH TỰ THAO TÁC TRÊN GIAO DIỆN CHÍNH (GUI WORKFLOW)
+--------------------------------------------------------------------------------
+1. Chọn Nhóm chuyên trách (ComboBox) -> Chọn Trang bị Máy (ComboBox) -> Chọn Loại chu kỳ.
+2. Nhập số lượng nhân viên thực tế thực hiện và cấu hình mốc Ngày áp dụng.
+3. Bấm "Tải biểu mẫu định mức" -> Hệ thống lôi dữ liệu định mức chuẩn đổ lên lưới Excel.
+4. Hệ thống tự động điền Số người và tự chạy hàm tính Timeline sinh dải giờ (hh:mm).
+5. Người dùng tương tác trên lưới: Tích chọn/bỏ việc, chỉnh sửa tay số người hoặc kết quả.
+6. Bấm "Xuất báo cáo Word" để in ấn, đồng thời bấm "Lưu phiếu" để lưu lịch sử.
+
+
+IV. GIẢI PHÁP KỸ THUẬT CỐT LÕI (CORE SOLUTIONS)
+--------------------------------------------------------------------------------
+1. Chuẩn hóa Font & Ký tự đặc biệt (Tiếng Nga & Kỹ thuật):
+   Sử dụng thư viện `python-docx` để bóc tách bảng biểu. Ép chuỗi văn bản về Unicode 
+   chuẩn hóa (NFC) bằng thư viện `unicodedata.normalize('NFC', text)`. Thiết lập bảng 
+   ánh xạ tự động để thay thế mã lỗi font nếu hệ thống hiển thị sai ký hiệu MΩ hoặc ôm.
+
+2. Thuật toán tự động cộng dồn ngắt quãng thời gian làm việc:
+   Hệ thống đọc mốc giờ hành chính từ phân hệ Cấu hình (Ví dụ: Sáng 07:00-11:30, Chiều 
+   13:30-16:30). Khi tính toán dải giờ, nếu công tác bị tràn giờ vào mốc nghỉ trưa hoặc 
+   hết ngày, hệ thống tự động ngắt chuỗi thời gian, đẩy dải giờ sang buổi chiều hoặc 
+   ngày hôm sau để đảm bảo timeline thực địa chính xác tuyệt đối.
+
+
+V. CẤU TRÚC THƯ MỤC DỰ ÁN CHUẨN MVC (PYSIDE6 PROJECT STRUCTURE)
+--------------------------------------------------------------------------------
+ThuyAm_Scheduler/
+│
+├── config/
+│   ├── config.json          # Lưu cấu hình giờ giấc làm việc (Buổi sáng, Buổi chiều)
+│   └── database.db          # Cơ sở dữ liệu SQLite lưu Định mức gốc và Lịch sử phiếu
+│
+├── core/
+│   ├── __init__.py
+│   ├── scheduler.py         # Thuật toán tính dải giờ tự động (Timeline Engine)
+│   └── word_exporter.py     # Module đọc/ghi và xuất biểu mẫu Word (.docx)
+│
+├── models/
+│   ├── __init__.py
+│   ├── base_model.py        # Kết nối và tương tác SQLite
+│   ├── plan_model.py        # Xử lý dữ liệu liên quan đến Định mức phiếu, Máy, Nhóm
+│   └── history_model.py     # Xử lý lưu vết, sửa đổi phiếu bảo dưỡng cũ
+│
+├── views/
+│   ├── __init__.py
+│   ├── main_window.py       # Giao diện chính (Sidebar + Khung chứa Tab)
+│   ├── tab_plan.py          # View Tab LẬP KẾ HOẠCH (Metadata Form + Excel Grid)
+│   ├── tab_config.py        # View Tab CẤU HÌNH THỜI GIAN
+│   ├── tab_history.py       # View Tab LỊCH SỬ BẢO QUẢN
+│   └── components/
+│       ├── __init__.py
+│       ├── excel_grid.py    # Custom Table Widget kiểu ô vuông phẳng chuẩn Excel
+│       └── date_picker.py   # Custom Widget chọn ngày tháng
+│
+├── controllers/
+│   ├── __init__.py
+│   ├── main_controller.py   # Điều phối trung tâm kết nối các Tab và Models
+│   ├── plan_controller.py   # Xử lý logic nạp định mức, tính giờ, bắt sự kiện lưới
+│   ├── config_controller.py # Xử lý đọc/ghi file config.json khi người dùng đổi giờ
+│   └── history_controller.py# Xử lý tìm kiếm lịch sử, gọi ngược phiếu cũ đổ lại lưới
+│
+├── assets/
+│   ├── icons/               # Chứa các file icon .png/.svg đồ họa phẳng
+│   └── templates/           # Chứa các file Word mẫu (.docx) đầu ra
+│
+├── requirements.txt         # Thư viện: PySide6, python-docx
+└── main.py                  # Điểm khởi chạy ứng dụng (Application Entry Point)
+
+================================================================================
+END OF FILE - TÀI LIỆU LƯU TRỮ NỘI BỘ BỘ PHẬN PHÁT TRIỂN
+================================================================================
