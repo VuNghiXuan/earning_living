@@ -1,6 +1,16 @@
 {
-    "morning_start": "07:00",
-    "morning_end": "11:00",
-    "afternoon_start": "13:30",
-    "afternoon_end": "16:00"
+    "worktime": {
+        "am_start": "07:00",
+        "am_end": "11:00",
+        "pm_start": "14:00",
+        "pm_end": "16:30",
+        "ot_start": "17:30",
+        "ot_end": "19:30"
+    },
+    "deadlines": {
+        "Phi\u1ebfu 01 (Qu\u1ea3n qu\u1ea3n tu\u1ea7n)": 1,
+        "Phi\u1ebfu 02 (B\u1ea3o qu\u1ea3n th\u00e1ng)": 5,
+        "Phi\u1ebfu 03 (B\u1ea3o qu\u1ea3n qu\u00fd)": 7,
+        "Phi\u1ebfu 04 (B\u1ea3o qu\u1ea3n tr\u00ean bi\u1ec3n)": 3
+    }
 }

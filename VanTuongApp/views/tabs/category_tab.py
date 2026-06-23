@@ -17,12 +17,12 @@ class CategoryTabWidget(QWidget):
         # Khởi tạo các tab từ các file riêng biệt
         self.tab_norm = NormTabWidget()
         self.tab_group = GroupMachineTabWidget(self.model)
-        self.tab_ticket = TicketTabWidget()
+        # self.tab_ticket = TicketTabWidget()
         
         # Thêm các tab vào widget
         self.tabs.addTab(self.tab_norm, "📁 Quản Lý Định Mức")
         self.tabs.addTab(self.tab_group, "🏢 Quản Lý Nhóm & Máy")
-        self.tabs.addTab(self.tab_ticket, "🎫 Loại Phiếu Bảo Dưỡng")
+        # self.tabs.addTab(self.tab_ticket, "🎫 Loại Phiếu Bảo Dưỡng")
         
         # Thêm TabWidget vào layout chính
         self.main_layout.addWidget(self.tabs)

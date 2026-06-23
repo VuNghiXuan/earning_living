@@ -10,7 +10,7 @@ class PlanModel:
 
     def get_connection(self):
         conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn.row_factory = sqlite3.Row # Giữ dòng này để dùng được ["tên_cột"]
         return conn
 
     def init_db(self):
@@ -28,10 +28,14 @@ class PlanModel:
             """)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS maintenance_cycles (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, device_id INTEGER NOT NULL, cycle_code TEXT NOT NULL, cycle_name TEXT,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                    device_id INTEGER NOT NULL, 
+                    cycle_code TEXT NOT NULL, 
+                    cycle_name TEXT, 
+                    tech_name TEXT,  -- <--- THÊM CỘT NÀY
                     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
                 )
-            """)
+            """)                        
             # ĐÃ THÊM CỘT result TEXT Ở DƯỚI ĐÂY:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS master_tasks (
@@ -49,13 +53,15 @@ class PlanModel:
             conn.commit()
 
     def import_from_word_data(self, parsed_data, target_group_name, file_name, file_path):
-        if not parsed_data: return
+        if not parsed_data:
+            return
         
         if not target_group_name or target_group_name.strip() == "":
             target_group_name = "Chưa phân loại"
             
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            
             # 1. Đảm bảo nhóm tồn tại
             cursor.execute("INSERT OR IGNORE INTO groups (group_name) VALUES (?)", (target_group_name,))
             cursor.execute("SELECT id FROM groups WHERE group_name = ?", (target_group_name,))
@@ -66,7 +72,7 @@ class PlanModel:
             source_file_id = cursor.lastrowid
             
             # 3. Nạp thiết bị và tác vụ
-            for dev_obj in parsed_data: # Sử dụng dev_obj là instance của DeviceMaintenance
+            for dev_obj in parsed_data:
                 d_name = dev_obj.device_name
                 
                 # Insert thiết bị
@@ -77,23 +83,29 @@ class PlanModel:
                 
                 # Duyệt qua các chu kỳ (cycles là dict: {"Phiếu 01": [tasks]})
                 for c_code, tasks in dev_obj.cycles.items():
-                    # Xử lý chu kỳ bảo dưỡng
+                    # Kiểm tra chu kỳ đã tồn tại chưa
                     cursor.execute("SELECT id FROM maintenance_cycles WHERE device_id = ? AND cycle_code = ?", (device_id, c_code))
                     cycle_row = cursor.fetchone()
+                    
                     if cycle_row:
                         cycle_id = cycle_row["id"]
+                        # Xóa các task cũ để nạp mới (cập nhật nội dung)
                         cursor.execute("DELETE FROM master_tasks WHERE cycle_id = ?", (cycle_id,))
                     else:
-                        cursor.execute("INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name) VALUES (?, ?, ?)", 
-                                       (device_id, c_code, c_code)) # c_name có thể dùng c_code nếu không có tên riêng
+                        # INSERT với TECH_NAME mới (lấy từ dev_obj.tech_name)
+                        cursor.execute("""
+                            INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name, tech_name) 
+                            VALUES (?, ?, ?, ?)
+                        """, (device_id, c_code, c_code, dev_obj.tech_name)) 
                         cycle_id = cursor.lastrowid
                     
-                    # Insert các đầu việc với cột result mới
-                    for t in tasks: # t là instance của MaintenanceTask
+                    # Insert các đầu việc
+                    for t in tasks:
                         cursor.execute("""
                             INSERT INTO master_tasks (cycle_id, tt, task_name, norm_workers, norm_minutes, tool, material, tckt, result)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (cycle_id, t.tt, t.name, t.workers, t.minutes, t.tool, t.material, t.tckt, t.result))
+            
             conn.commit()
 
     def move_device_to_group(self, device_name, new_group_name):
@@ -142,8 +154,8 @@ class PlanModel:
     # Cập nhật dữ liệu cho danh mục định mức
     def get_all_norms(self):
         query = """
-            SELECT d.device_name, mc.cycle_code, mt.tt, mt.task_name, mt.norm_workers, 
-                mt.norm_minutes, mt.tool, mt.material, mt.tckt, mt.result
+            SELECT d.device_name, mc.cycle_code, mc.tech_name, mt.tt, mt.task_name, 
+                mt.norm_workers, mt.norm_minutes, mt.tool, mt.material, mt.tckt, mt.result
             FROM master_tasks mt
             JOIN maintenance_cycles mc ON mt.cycle_id = mc.id
             JOIN devices d ON mc.device_id = d.id
@@ -181,3 +193,83 @@ class PlanModel:
             cursor = conn.cursor()
             cursor.execute("SELECT group_name FROM groups")
             return [row["group_name"] for row in cursor.fetchall()]
+    
+    def update_all_norms(self, mapped_data_list):
+        if not mapped_data_list: return False
+
+        with self.get_connection() as conn:
+            conn.row_factory = None
+            cursor = conn.cursor()
+            try:
+                # 1. BẮT ĐẦU TRANSACTION: Xóa sạch dữ liệu cũ trong 3 bảng liên quan
+                # Việc xóa theo thứ tự ngược lại (Tasks -> Cycles -> Devices) để tránh lỗi Foreign Key
+                cursor.execute("BEGIN TRANSACTION")
+                
+                cursor.execute("DELETE FROM master_tasks")
+                cursor.execute("DELETE FROM maintenance_cycles")
+                cursor.execute("DELETE FROM devices")
+                # Nếu muốn xóa luôn cả groups, hãy thêm lệnh xóa ở đây
+                
+                print("[DEBUG] Đã xóa toàn bộ dữ liệu cũ trong DB.")
+
+                # 2. CHÈN DỮ LIỆU MỚI (Tái tạo hệ thống)
+                # Dùng dict để tracking các ID đã tạo để tránh trùng lặp khi Insert
+                device_cache = {} # { "Tên thiết bị": id }
+                cycle_cache = {}  # { ("Tên thiết bị", "Code"): id }
+
+                for item in mapped_data_list:
+                    d_name = str(item['device_name']).strip()
+                    c_code = str(item['cycle_code']).strip()
+
+                    # A. Xử lý Thiết bị
+                    if d_name not in device_cache:
+                        cursor.execute("INSERT INTO devices (group_id, device_name) VALUES (?, ?)", (1, d_name))
+                        device_cache[d_name] = cursor.lastrowid
+                    device_id = device_cache[d_name]
+
+                    # B. Xử lý Chu kỳ
+                    cycle_key = (d_name, c_code)
+                    if cycle_key not in cycle_cache:
+                        cursor.execute("INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name, tech_name) VALUES (?, ?, ?, ?)", 
+                                       (device_id, c_code, c_code, item['tech_name']))
+                        cycle_cache[cycle_key] = cursor.lastrowid
+                    cycle_id = cycle_cache[cycle_key]
+
+                    # C. Xử lý Task (Vì bảng đã xóa sạch nên cứ INSERT thôi)
+                    cursor.execute("""
+                        INSERT INTO master_tasks (cycle_id, tt, task_name, norm_workers, norm_minutes, tool, material, tckt, result)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (cycle_id, item['tt'], item['task_name'], item['workers'], item['minutes'], 
+                          item['tool'], item['material'], item['tckt'], item['result']))
+
+                conn.commit()
+                print("[DEBUG] Đã cập nhật lại toàn bộ DB từ giao diện.")
+                return True
+            except Exception as e:
+                conn.rollback()
+                print(f"[ERROR] Quá trình cập nhật thất bại, đã rollback: {e}")
+                return False
+    
+    # Lấy Phiếu số từ DB đưa vào setting_bar
+    def get_all_phieu_names(self):
+        """
+        Lấy danh sách tên phiếu (cycle_code) từ bảng maintenance_cycles.
+        """
+        try:
+            # Gọi phương thức get_connection() để lấy kết nối DB
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Truy vấn lấy tên phiếu
+            query = "SELECT DISTINCT cycle_code FROM maintenance_cycles WHERE cycle_code IS NOT NULL AND cycle_code != ''"
+            
+            cursor.execute(query)
+            results = [row[0] for row in cursor.fetchall()]
+            
+            # Đóng kết nối nếu cần thiết (tùy vào cách cấu trúc DB của bạn)
+            # conn.close() 
+            
+            return results
+        except Exception as e:
+            print(f"[ERROR] Không thể lấy danh sách phiếu từ maintenance_cycles: {e}")
+            return []

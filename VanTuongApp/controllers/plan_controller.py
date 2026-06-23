@@ -12,7 +12,7 @@ class PlanController:
         self.current_tasks_data = [] 
         
         # Kết nối tín hiệu UI
-        self.view.btn_load.clicked.connect(self.load_data_to_grid)
+        # self.view.btn_load.clicked.connect(self.load_data_to_grid)
         
     def load_data_to_grid(self):
         """

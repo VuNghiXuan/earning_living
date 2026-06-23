@@ -74,9 +74,9 @@ class MainView(QWidget):
         self.container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         # Khởi tạo 3 Module Tab lớn
-        self.tab_plan = PlanTabWidget()
+        self.tab_plan = PlanTabWidget(self.model)
         self.tab_category = CategoryTabWidget(self.model)
-        self.tab_setting = SettingTabWidget()
+        self.tab_setting = SettingTabWidget(self.model)
         
         # Đưa vào bộ Stack quản lý trang
         self.container.addWidget(self.tab_plan)      # Chỉ số 0 -> Lập kế hoạch

@@ -26,37 +26,43 @@ class MainController(QMainWindow):
         self.plan_ctrl = PlanController(self.p_tab, self.model)
         
         # 3. Kết nối sự kiện toàn cục
-        self.main_view.tab_setting.btn_save_config.clicked.connect(self.on_btn_save_config_clicked)
+        # self.main_view.tab_setting.btn_save_config.clicked.connect(self.on_btn_save_config_clicked)
+        self.main_view.tab_setting.btn_save.clicked.connect(self.on_btn_save_config_clicked)
         
         # Gọi khởi tạo ban đầu
         self.refresh_group_dropdown()
 
     def on_btn_save_config_clicked(self):
-        s = self.s_tab
-        am_s = s.time_am_start.time().toString("HH:mm")
-        am_e = s.time_am_end.time().toString("HH:mm")
-        msg = f"Đã cấu hình thời gian:\n- Ca sáng: {am_s} -> {am_e}"
-        QMessageBox.information(self, "Hệ thống", msg)
+        s = self.main_view.tab_setting
+        # Lấy dữ liệu từ dictionary time_fields đã được tối ưu trong bản trước
+        am_s = s.time_fields['am_start'].time().toString("HH:mm")
+        am_e = s.time_fields['am_end'].time().toString("HH:mm")
+        
+        # Bạn có thể gọi trực tiếp hàm lưu của SettingTabWidget để đồng bộ
+        s.save_all_settings()
+        
+        # msg = f"Đã cập nhật cấu hình:\nSáng: {am_s} - {am_e}\n(Dữ liệu đã lưu vào config.json)"
+        # QMessageBox.information(self, "Hệ thống", msg)
 
     def refresh_group_dropdown(self):
         """Đổ dữ liệu nhóm vào ComboBox"""
         if not hasattr(self, 'p_tab'): return
         
-        self.p_tab.cb_group.blockSignals(True)
-        self.p_tab.cb_group.clear()
+        self.p_tab.filter_widget.cb_group.blockSignals(True)
+        self.p_tab.filter_widget.cb_group.clear()
         
         try:
             with self.model.get_connection() as conn:
                 rows = conn.execute("SELECT group_name FROM groups").fetchall()
                 for r in rows:
-                    self.p_tab.cb_group.addItem(r["group_name"])
+                    self.p_tab.filter_widget.cb_group.addItem(r["group_name"])
         except Exception as e:
             print(f"Lỗi refresh group: {e}")
         finally:
-            self.p_tab.cb_group.blockSignals(False)
+            self.p_tab.filter_widget.cb_group.blockSignals(False)
             # Tự động cập nhật danh sách thiết bị
-            if self.p_tab.cb_group.count() > 0:
-                self.on_group_changed(self.p_tab.cb_group.currentText())
+            if self.p_tab.filter_widget.cb_group.count() > 0:
+                self.on_group_changed(self.p_tab.filter_widget.cb_group.currentText())
 
     def on_group_changed(self, group_name):
         """Hàm xử lý thay đổi nhóm - nên nằm ở PlanController nếu muốn chuyên biệt"""
@@ -64,7 +70,7 @@ class MainController(QMainWindow):
         pass
 
     def on_admin_import_clicked(self):
-        # KHÔNG GỌI self.p_tab.cb_group.currentText() ĐỂ CHẶN NỮA
+        # KHÔNG GỌI self.p_tab.filter_widget.cb_group.currentText() ĐỂ CHẶN NỮA
         file_path, _ = QFileDialog.getOpenFileName(self, "Chọn File", "", "Word Files (*.docx)")
         if not file_path: return
 

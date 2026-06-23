@@ -1,6 +1,14 @@
 import re
 from docx import Document
 
+# 1. Định nghĩa từ điển ánh xạ
+PHIEU_MAP = {
+    "01": "Bảo quản tuần",
+    "02": "Bảo quản tháng",
+    "03": "Bảo quản quý",
+    "04": "Bảo quản trên biển"
+}
+
 # --- CÁC LỚP DỮ LIỆU ---
 class MaintenanceTask:
     def __init__(self, tt, name, workers, minutes, tool, material, tckt, result=""):
@@ -16,53 +24,90 @@ class MaintenanceTask:
 class DeviceMaintenance:
     def __init__(self, device_name, tech_name):
         self.device_name = device_name
-        self.tech_name = tech_name
-        self.cycles = {} 
+        self.tech_name = tech_name  # Lưu tên phiếu công nghệ của thiết bị
+        self.cycles = {}           # Dict lưu danh sách task theo từng mã phiếu
 
     def add_task(self, cycle_code, task_obj):
         cycle_code = cycle_code.strip()
         if cycle_code not in self.cycles:
             self.cycles[cycle_code] = []
-        # Tạo bản sao đối tượng để tránh xung đột dữ liệu
+        # Sao chép đối tượng để tránh tham chiếu chồng chéo
         new_task = MaintenanceTask(
             task_obj.tt, task_obj.name, task_obj.workers, task_obj.minutes,
             task_obj.tool, task_obj.material, task_obj.tckt, task_obj.result
         )
         self.cycles[cycle_code].append(new_task)
 
-
-# --- CÁC HÀM XỬ LÝ DỮ LIỆU ---
+# --- HÀM XỬ LÝ DỮ LIỆU ---
 
 def is_placeholder(val):
-    clean_val = val.strip().replace('-', '').replace('/', '').replace(':', '')
-    return clean_val == ""
+    """
+    Chỉ trả về True nếu ô trống hoàn toàn hoặc 
+    chỉ chứa các ký tự quy ước như '-', '/', hoặc khoảng trắng.
+    """
+    # Xóa khoảng trắng 2 đầu
+    val = val.strip()
+    
+    # Nếu ô hoàn toàn trống
+    # if not val:
+    #     return True
+        
+    # Kiểm tra xem ô có CHỈ chứa các ký tự trong danh sách này không
+    # Sử dụng Regex để khớp nếu chuỗi chỉ gồm: - / hoặc khoảng trắng
+    if re.fullmatch(r'[\-\/\s]+', val):
+        return True
+        
+    return False
 
 def parse_header(text):
-    """Phân tích tiêu đề để tìm: Phiếu công nghệ, Tên thiết bị, Các phiếu số."""
+    """Phân tích đoạn văn để trích xuất Phiếu công nghệ, Thiết bị và Danh sách Phiếu số."""
     header_data = {}
     
-    # 1. Tìm Phiếu công nghệ
+    # 1. Trích xuất Phiếu công nghệ (Ví dụ: PHIẾU CÔNG NGHỆ BQDP - KSĐK)
     tech_match = re.search(r'(PHIẾU\s+CÔNG\s+NGHỆ.+)', text, re.IGNORECASE)
     if tech_match:
         header_data['tech_name'] = tech_match.group(1).strip()
     
-    # 2. Tìm Tên thiết bị
+    # 2. Trích xuất Tên thiết bị (Bỏ qua các đoạn chứa từ khóa "PHIẾU")
     dev_match = re.search(r'(?:TÊN\s*TRANG\s*BỊ\s*:\s*|\d+\.\s+)(.+)', text, re.IGNORECASE)
     if dev_match and "PHIẾU" not in dev_match.group(1).upper():
         header_data['device_name'] = dev_match.group(1).strip()
         
-    # 3. Tìm Phiếu số
+    # 3. Trích xuất Danh sách Phiếu số (Xử lý các dạng: 02, 03 hoặc 02-03)
+    # cycle_match = re.search(r'PHIẾU\s*SỐ\s*:\s*([\d\s,–\-]+)', text, re.IGNORECASE)
+    # if cycle_match:
+    #     raw_nums = re.split(r'[,–\-]', cycle_match.group(1))
+    #     header_data['cycles'] = [f"Phiếu {n.strip().zfill(2)}" for n in raw_nums if n.strip().isdigit()]
+        
+    # return header_data if header_data else None
+
     cycle_match = re.search(r'PHIẾU\s*SỐ\s*:\s*([\d\s,–\-]+)', text, re.IGNORECASE)
     if cycle_match:
         raw_nums = re.split(r'[,–\-]', cycle_match.group(1))
-        header_data['cycles'] = [f"Phiếu {n.strip().zfill(2)}" for n in raw_nums if n.strip().isdigit()]
+        cycles = []
+        for n in raw_nums:
+            n_clean = n.strip()
+            if n_clean.isdigit():
+                # Đảm bảo số phiếu có dạng 2 chữ số (VD: 1 -> 01)
+                formatted_num = n_clean.zfill(2)
+                
+                # Lấy mô tả từ map, nếu không có thì để trống
+                description = PHIEU_MAP.get(formatted_num, "")
+                
+                # Tạo chuỗi hiển thị
+                display_str = f"Phiếu {formatted_num}"
+                if description:
+                    display_str += f" ({description})"
+                
+                cycles.append(display_str)
         
+        header_data['cycles'] = cycles
     return header_data if header_data else None
 
 def parse_table_row(row, prev_state):
-    """Đọc và trích xuất dữ liệu từ hàng bảng."""
+    """Trích xuất dữ liệu từ hàng bảng và thực hiện cơ chế kế thừa nội dung."""
     cells = row.cells
-    # Kiểm tra đủ cột và hàng dữ liệu phải bắt đầu bằng số (STT)
+    # Chỉ xử lý các hàng bắt đầu bằng số STT
     if len(cells) < 8 or not re.match(r'^\d+', cells[0].text.strip()):
         return None, prev_state
 
@@ -71,19 +116,15 @@ def parse_table_row(row, prev_state):
     workers = int(re.search(r'\d+', cells[2].text.strip()).group()) if re.search(r'\d+', cells[2].text.strip()) else 1
     mins = int(re.search(r'\d+', cells[3].text.strip()).group()) if re.search(r'\d+', cells[3].text.strip()) else 0
     
-    # Kế thừa dữ liệu
-    raw_tool = cells[4].text.strip()
+    # Kế thừa dữ liệu từ dòng trước nếu ô hiện tại trống
+    raw_tool, raw_mat, raw_tckt = cells[4].text.strip(), cells[5].text.strip(), cells[6].text.strip()
+    
     tool = prev_state['tool'] if is_placeholder(raw_tool) else raw_tool
-    
-    raw_mat = cells[5].text.strip()
     mat = prev_state['mat'] if is_placeholder(raw_mat) else raw_mat
-    
-    raw_tckt = cells[6].text.strip()
     tckt = prev_state['tckt'] if is_placeholder(raw_tckt) else raw_tckt
-    
     result = cells[7].text.strip()
 
-    # Cập nhật trạng thái
+    # Cập nhật trạng thái kế thừa cho dòng tiếp theo
     if not is_placeholder(raw_tool): prev_state['tool'] = tool
     if not is_placeholder(raw_mat): prev_state['mat'] = mat
     if not is_placeholder(raw_tckt): prev_state['tckt'] = tckt
@@ -96,22 +137,15 @@ def parse_maintenance_word_file(file_path):
     doc = Document(file_path)
     devices_dict = {}
     
-    # 1. Gom nhóm: Chia document thành các block (1 tiêu đề + 1 bảng)
-    # Chúng ta dùng chỉ số để duyệt
-    all_elements = doc.paragraphs + doc.tables
-    # Sắp xếp lại dựa trên vị trí thực tế trong file nếu cần, 
-    # nhưng ở đây ta duyệt tuần tự:
-    
     current_device = None
     current_tech = "Chưa xác định"
-    current_cycles = ["Phiếu 01"]
+    current_cycles = []
 
-    # Duyệt qua từng đoạn văn/bảng
+    # Duyệt tuần tự qua các phần tử của document
     for item in doc.element.body:
-        # Nếu là Paragraph (Tiêu đề)
+        # Nếu là đoạn văn (Paragraph) -> Kiểm tra tiêu đề
         if item.tag.endswith('p'):
-            text = item.text.strip()
-            header = parse_header(text)
+            header = parse_header(item.text.strip())
             if header:
                 if 'tech_name' in header: current_tech = header['tech_name']
                 if 'cycles' in header: current_cycles = header['cycles']
@@ -119,30 +153,25 @@ def parse_maintenance_word_file(file_path):
                     current_device = header['device_name']
                     if current_device not in devices_dict:
                         devices_dict[current_device] = DeviceMaintenance(current_device, current_tech)
-                    print(f"\n>>> [TIÊU ĐỀ]: {current_device} | {current_cycles}")
+                    # Cập nhật tech_name mới nhất cho thiết bị
+                    devices_dict[current_device].tech_name = current_tech
 
-        # Nếu là Table (Bảng)
+        # Nếu là bảng (Table) -> Xử lý dữ liệu
         elif item.tag.endswith('tbl'):
-            # Tìm đối tượng table tương ứng trong doc.tables
-            # (Phải dùng cơ chế tìm bảng theo vị trí)
             table = next((t for t in doc.tables if t._element == item), None)
-            
-            if table and current_device:
-                print(f"    [BẢNG]: Đang nạp cho {current_device} - {current_cycles}")
-                
+            if table and current_device and current_cycles:
                 device_obj = devices_dict[current_device]
                 prev_state = {'tool': "", 'mat': "", 'tckt': ""}
                 
+                # Bỏ qua dòng tiêu đề bảng (table.rows[0])
                 for row in table.rows[1:]:
                     task, prev_state = parse_table_row(row, prev_state)
                     if task:
-                        # NẠP DỮ LIỆU ĐÚNG VÀO PHIẾU CỦA BLOCK HIỆN TẠI
+                        # Gán task vào tất cả các phiếu số tìm thấy ở tiêu đề phía trên
                         for cycle in current_cycles:
                             device_obj.add_task(cycle, task)
                 
-                print(f"    [XONG]: Nạp xong {len(table.rows)-1} dòng vào {current_cycles}")
-                
-                # QUAN TRỌNG: RESET PHIẾU SAU MỖI BẢNG ĐỂ TRÁNH BỊ GÁN NHẦM
+                # Reset cycle để tránh gán nhầm nếu có bảng lẻ không có tiêu đề kèm theo
                 current_cycles = [] 
                 
     return list(devices_dict.values())
