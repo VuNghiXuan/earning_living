@@ -1,156 +1,142 @@
-import json
 import os
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, 
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTabWidget, 
                                QGroupBox, QFormLayout, QLabel, QTimeEdit, 
-                               QPushButton, QSpinBox, QScrollArea, QMessageBox, QGridLayout)
+                               QPushButton, QSpinBox, QScrollArea, QMessageBox, QHBoxLayout)
 from PySide6.QtCore import QTime, Qt
 import config.app_config as cfg
+
 
 class SettingTabWidget(QWidget):
     def __init__(self, model, parent=None):
         super().__init__(parent)
         self.model = model
-        self.config_path = os.path.join("config", "config.json")
         self.time_fields = {}
+        self.deadline_inputs = {}
+        
+        # Chỉ giữ lại CSS cho các nút bấm (an toàn)
+        self.setStyleSheet("""
+            QPushButton { 
+                background-color: #3498db; color: white; 
+                border-radius: 5px; font-weight: bold; padding: 10px;
+            }
+            QPushButton:hover { background-color: #2980b9; }
+            QGroupBox { font-weight: bold; margin-top: 10px; border: 1px solid #dcdcdc; border-radius: 5px; padding: 10px; }
+        """)
+        
         self.init_ui()
         self.load_config_to_ui()
-
-    def create_time_edit(self):
-        te = QTimeEdit()
-        te.setDisplayFormat("HH:mm")
-        te.setCalendarPopup(True)
-        te.setKeyboardTracking(True)
-        # Khi click vào, tự động bôi đen để nhập đè nhanh
-        te.mousePressEvent = lambda event: (te.selectAll(), QTimeEdit.mousePressEvent(te, event))
-        te.setStyleSheet("""
-            QTimeEdit { padding: 8px; border: 1px solid #3498db; border-radius: 4px; font-size: 14px; }
-            QTimeEdit::up-button, QTimeEdit::down-button { width: 20px; }
-        """)
-        return te
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
         self.tab_widget.setStyleSheet(cfg.TAB_BAR_STYLE)
+
         
-        # --- TAB 1: THỜI GIAN LÀM VIỆC ---
+        # --- TAB 1: THỜI GIAN ---
         tab_time = QWidget()
         time_layout = QVBoxLayout(tab_time)
         
-        # Nhóm hành chính
         box_work = QGroupBox("🕒 Giờ hành chính")
         form_work = QFormLayout(box_work)
-        for label, key, default in [("Sáng bắt đầu", "am_start", QTime(8, 0)), 
-                                    ("Sáng kết thúc", "am_end", QTime(11, 30)),
-                                    ("Chiều bắt đầu", "pm_start", QTime(13, 30)), 
-                                    ("Chiều kết thúc", "pm_end", QTime(17, 0))]:
-            field = self.create_time_edit()
-            field.setTime(default)
-            self.time_fields[key] = field
-            form_work.addRow(f"{label}:", field)
-            
-        # Nhóm tăng ca
+        for label, key, default in [("Sáng bắt đầu", "am_start", QTime(7, 0)), 
+                                    ("Sáng kết thúc", "am_end", QTime(11, 0)),
+                                    ("Chiều bắt đầu", "pm_start", QTime(14, 0)), 
+                                    ("Chiều kết thúc", "pm_end", QTime(16, 30))]:
+            te = QTimeEdit()
+            te.setDisplayFormat("HH:mm")
+            te.setTime(default)
+            te.setFixedSize(100, 30)
+            form_work.addRow(f"{label}:", te)
+            self.time_fields[key] = te
+        
         box_ot = QGroupBox("🌙 Giờ tăng ca")
         form_ot = QFormLayout(box_ot)
         for label, key, default in [("OT bắt đầu", "ot_start", QTime(17, 30)),
                                     ("OT kết thúc", "ot_end", QTime(19, 30))]:
-            field = self.create_time_edit()
-            field.setTime(default)
-            self.time_fields[key] = field
-            form_ot.addRow(f"{label}:", field)
-            
+            te = QTimeEdit()
+            te.setDisplayFormat("HH:mm")
+            te.setTime(default)
+            te.setFixedSize(100, 30)
+            form_ot.addRow(f"{label}:", te)
+            self.time_fields[key] = te
+
         time_layout.addWidget(box_work)
         time_layout.addWidget(box_ot)
         time_layout.addStretch()
         self.tab_widget.addTab(tab_time, "⏰ Thời gian làm việc")
 
-        # --- TAB 2: THỜI HẠN PHIẾU (ĐÃ TỐI ƯU GIAO DIỆN) ---
+        # --- TAB 2: THỜI HẠN PHIẾU ---
         tab_deadline = QWidget()
         d_layout = QVBoxLayout(tab_deadline)
         
-        # Tạo box bao quanh với nội dung có khoảng cách (padding)
-        box_deadline = QGroupBox("Định mức số ngày thực hiện cho từng loại phiếu")
-        box_deadline.setStyleSheet("QGroupBox { font-weight: bold; margin-top: 10px; }")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        form_deadline = QFormLayout(container)
         
-        grid = QGridLayout(box_deadline)
-        grid.setSpacing(20) # Khoảng cách giữa các ô
-        grid.setContentsMargins(20, 20, 20, 20) # Lề trong của box
-        
-        self.deadline_inputs = {}
         phieu_list = self.model.get_all_phieu_names()
-
-        for i, p in enumerate(phieu_list):
-            lbl = QLabel(f"📄 {p}")
-            # Cấu hình Label để chữ không bị dính vào cạnh
-            lbl.setStyleSheet("color: #2c3e50; font-size: 13px;")
-            
+        for p in phieu_list:
             spin = QSpinBox()
             spin.setRange(0, 365)
             spin.setSuffix(" ngày")
-            spin.setFixedHeight(35) # Tăng chiều cao để dễ nhìn
-            # Style ô nhập số chuyên nghiệp
-            spin.setStyleSheet("""
-                QSpinBox { 
-                    border: 1px solid #bdc3c7; 
-                    border-radius: 5px; 
-                    padding: 5px; 
-                    background: #f8f9fa;
-                }
-                QSpinBox:focus { border: 1px solid #3498db; }
-            """)
+            spin.setFixedSize(150, 35)
             
-            # Cột 0: Label, Cột 1: SpinBox
-            # i // 2 là hàng, (i % 2) * 2 là cột
-            row = i // 2
-            col = (i % 2) * 2
-            
-            grid.addWidget(lbl, row, col, Qt.AlignVCenter)
-            grid.addWidget(spin, row, col + 1, Qt.AlignVCenter)
-            
-            # Thiết lập tỉ lệ co dãn cột: cột 1 (spinbox) co dãn, cột 0 (label) cố định
-            grid.setColumnStretch(col + 1, 1)
-            
+            form_deadline.addRow(f"📄 {p}:", spin)
             self.deadline_inputs[p] = spin
             
-        # Thêm một Spacer ở dưới cùng để các hàng không bị dãn ra khi tab trống
-        grid.setRowStretch(len(phieu_list) // 2 + 1, 1)
-            
-        scroll = QScrollArea()
-        scroll.setWidget(box_deadline)
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        
+        scroll.setWidget(container)
         d_layout.addWidget(scroll)
-        self.tab_widget.addTab(tab_deadline, "📅 Thời hạn phiếu")
+        self.tab_widget.addTab(tab_deadline, "📅 Số ngày theo phiếu")
 
         main_layout.addWidget(self.tab_widget)
         
-        # Footer chứa nút lưu
-        footer = QHBoxLayout()
-        footer.addStretch()
+        # Nút lưu
+        # Footer cho nút lưu
+        footer_layout = QHBoxLayout()
+        footer_layout.addStretch()  # Đẩy mọi thứ sang bên trái, dồn nút sang phải
+        
         self.btn_save = QPushButton("💾 Lưu cấu hình hệ thống")
-        self.btn_save.setStyleSheet(cfg.BTN_PLAN_STYLE + "padding: 10px 20px;")
+        self.btn_save.setFixedWidth(200) # Cố định chiều rộng để nút không quá dài
+        self.btn_save.setMinimumHeight(40)
+        self.btn_save.setStyleSheet("""
+            QPushButton {
+                background-color: #FFD700; 
+                color: black;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QPushButton:hover { background-color: #FFC107; }
+        """)
         self.btn_save.clicked.connect(self.save_all_settings)
-        footer.addWidget(self.btn_save)
-        main_layout.addLayout(footer)
+        
+        footer_layout.addWidget(self.btn_save)
+        
+        # Thêm footer vào main_layout
+        main_layout.addLayout(footer_layout)
 
+    # ĐÃ KHÔI PHỤC CÁC HÀM XỬ LÝ DỮ LIỆU:
     def save_all_settings(self):
-        data = {
-            "worktime": {k: v.time().toString("HH:mm") for k, v in self.time_fields.items()},
-            "deadlines": {name: spin.value() for name, spin in self.deadline_inputs.items()}
-        }
-        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-        with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-        QMessageBox.information(self, "Thành công", "Đã cập nhật cấu hình hệ thống!")
+        """Lưu toàn bộ cấu hình vào model."""
+        # Lưu giờ làm việc
+        for key, field in self.time_fields.items():
+            self.model.save_setting(f"time_{key}", field.time().toString("HH:mm"))
+        
+        # Lưu deadlines
+        for name, spin in self.deadline_inputs.items():
+            self.model.save_setting(f"deadline_{name}", spin.value())
+            
+        QMessageBox.information(self, "Thành công", "Đã lưu cấu hình vào hệ thống!")
 
     def load_config_to_ui(self):
-        if not os.path.exists(self.config_path): return
-        with open(self.config_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            for k, v in data.get("worktime", {}).items():
-                if k in self.time_fields:
-                    self.time_fields[k].setTime(QTime.fromString(v, "HH:mm"))
-            for name, value in data.get("deadlines", {}).items():
-                if name in self.deadline_inputs:
-                    self.deadline_inputs[name].setValue(value)
+        """Load dữ liệu từ model vào các ô nhập liệu."""
+        # Load giờ
+        for key in self.time_fields:
+            val = self.model.get_setting(f"time_{key}")
+            if val:
+                self.time_fields[key].setTime(QTime.fromString(val, "HH:mm"))
+                
+        # Load deadlines
+        for name, spin in self.deadline_inputs.items():
+            val = self.model.get_setting(f"deadline_{name}", "0")
+            spin.setValue(int(val))

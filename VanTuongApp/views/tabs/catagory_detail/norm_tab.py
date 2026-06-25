@@ -39,7 +39,7 @@ class NormTabWidget(QWidget):
         
         # 2. Cấu hình Bảng
         self.table_norms = CustomTableWidget()
-        self.table_norms.setColumnCount(11) 
+        # self.table_norms.setColumnCount(11) 
         self.set_headers() # Hàm thiết lập tên cột
         self.table_norms.apply_style(TABLE_WIDGET_STYLE)
         
@@ -87,34 +87,32 @@ class NormTabWidget(QWidget):
         except Exception as e:
             print(f"[ERROR] Không thể thiết lập header từ config: {e}")
             # Dự phòng: Thiết lập mặc định nếu config bị lỗi
-            default_headers = ["TT", "Nội dung", "Nhân công", "Thời gian", "Dụng cụ", 
-                               "Vật tư", "TCKT", "Kết quả", "Máy/Thiết bị", "Phiếu bảo dưỡng", "Phiếu công nghệ"]
+            default_headers = ["Máy/Thiết bị", "Phiếu bảo dưỡng", "TT", "Nội dung", "Nhân công", "Thời gian", "Dụng cụ", 
+                               "Vật tư", "TCKT", "Kết quả" ] #, "Phiếu công nghệ"
             self.table_norms.setColumnCount(len(default_headers))
             self.table_norms.setHorizontalHeaderLabels(default_headers)
 
     def load_norms_to_table(self, data_list):
         self.table_norms.setRowCount(0)
-        self.set_headers() # Header đã hiển thị đúng theo thứ tự 0, 1, 2...
+        self.set_headers()
         
         cols_config = NORMS_TABLE_CONFIG["columns"]
         
         for row_idx, row_data in enumerate(data_list):
             self.table_norms.insertRow(row_idx)
             
-            # Duyệt qua các cột theo thứ tự hiển thị của UI (0, 1, 2...)
-            # Tìm xem cột đó (theo thứ tự hiển thị) ứng với key nào trong config
-            for ui_idx in range(self.table_norms.columnCount()):
-                # Tìm key trong config có idx == ui_idx
-                field_key = next((k for k, v in cols_config.items() if v["idx"] == ui_idx), None)
+            # Duyệt qua từng cột trong cấu hình để điền dữ liệu
+            for field_key, info in cols_config.items():
+                ui_idx = info.get("idx")
                 
-                if field_key:
-                    # Lấy dữ liệu từ vị trí thực tế của DB (Dựa trên dòng debug của bạn)
-                    db_idx = cols_config[field_key]["idx"]
-                    val = row_data[db_idx] if db_idx < len(row_data) else ""
-                    
-                    item = QTableWidgetItem(str(val))
-                    if ui_idx == 0: item.setTextAlignment(Qt.AlignCenter)
-                    self.table_norms.setItem(row_idx, ui_idx, item)
+                # Giả sử row_data là list, và thứ tự trong list khớp với thứ tự khai báo trong config
+                # Nếu row_data là list theo thứ tự 0,1,2,3... thì bạn cần biết db_index
+                # Ở đây mình giả định bạn lấy theo thứ tự của config:
+                val = row_data[ui_idx] if ui_idx < len(row_data) else ""
+                
+                item = QTableWidgetItem(str(val))
+                if ui_idx == 0: item.setTextAlignment(Qt.AlignCenter)
+                self.table_norms.setItem(row_idx, ui_idx, item)
         
         self.table_norms.resizeColumnsToContents()
 
@@ -130,11 +128,11 @@ class NormTabWidget(QWidget):
     def add_empty_row(self):
         row = self.table_norms.rowCount()
         self.table_norms.insertRow(row)
-        for col in range(11):
+        for col in range(self.table_norms.columnCount()):
             item = QTableWidgetItem("")
             item.setFlags(Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             self.table_norms.setItem(row, col, item)
-
+           
     def delete_selected_row(self):
         for row in sorted(set(idx.row() for idx in self.table_norms.selectedIndexes()), reverse=True):
             self.table_norms.removeRow(row)
@@ -142,8 +140,9 @@ class NormTabWidget(QWidget):
     def save_to_database(self):
         # 1. Thu thập dữ liệu từ bảng
         current_data = []
+        col_count = self.table_norms.columnCount()
         for r in range(self.table_norms.rowCount()):
-            row_data = [self.table_norms.item(r, c).text() if self.table_norms.item(r, c) else "" for c in range(11)]
+            row_data = [self.table_norms.item(r, c).text() if self.table_norms.item(r, c) else "" for c in range(col_count)]
             current_data.append(row_data)
 
         # 2. Gọi hàm callback đã truyền vào để xử lý lưu DB
@@ -162,6 +161,7 @@ class NormTabWidget(QWidget):
 
     def filter_table(self, text):
         filter_text = text.lower()
+        col_count = self.table_norms.columnCount()
         for row in range(self.table_norms.rowCount()):
-            match = any(filter_text in (self.table_norms.item(row, col).text().lower() if self.table_norms.item(row, col) else "") for col in range(11))
+            match = any(filter_text in (self.table_norms.item(row, col).text().lower() if self.table_norms.item(row, col) else "") for col in range(col_count))
             self.table_norms.setRowHidden(row, not match)

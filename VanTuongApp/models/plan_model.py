@@ -1,6 +1,9 @@
 import sqlite3
+import functools
 import os
 from docx import Document
+import sqlite3
+
 
 class PlanModel:
     def __init__(self, db_path="config/database.db"):
@@ -32,7 +35,7 @@ class PlanModel:
                     device_id INTEGER NOT NULL, 
                     cycle_code TEXT NOT NULL, 
                     cycle_name TEXT, 
-                    tech_name TEXT,  -- <--- THÊM CỘT NÀY
+                    
                     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
                 )
             """)                        
@@ -46,12 +49,29 @@ class PlanModel:
             """)
             conn.commit()
 
-    def add_new_group(self, group_name):
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO groups (group_name) VALUES (?)", (group_name.strip(),))
-            conn.commit()
+            # Thêm bảng system_settings vào hàm init_db của bạn:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
 
+    # Thêm hàm bắt lỗi:
+    def handle_db_error(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs): # Thêm self vào đây
+            try:
+                return func(self, *args, **kwargs)
+            except sqlite3.OperationalError as e:
+                print(f"[ERROR DETECTED] trong hàm {func.__name__}: {e}")
+                raise e
+        return wrapper
+
+    
+    
+
+    @handle_db_error
     def import_from_word_data(self, parsed_data, target_group_name, file_name, file_path):
         if not parsed_data:
             return
@@ -92,11 +112,11 @@ class PlanModel:
                         # Xóa các task cũ để nạp mới (cập nhật nội dung)
                         cursor.execute("DELETE FROM master_tasks WHERE cycle_id = ?", (cycle_id,))
                     else:
-                        # INSERT với TECH_NAME mới (lấy từ dev_obj.tech_name)
+                        
                         cursor.execute("""
-                            INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name, tech_name) 
-                            VALUES (?, ?, ?, ?)
-                        """, (device_id, c_code, c_code, dev_obj.tech_name)) 
+                            INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name) 
+                            VALUES (?, ?, ?)
+                        """, (device_id, c_code, c_code)) 
                         cycle_id = cursor.lastrowid
                     
                     # Insert các đầu việc
@@ -108,6 +128,18 @@ class PlanModel:
             
             conn.commit()
 
+    # Code cho system_settings
+    def save_setting(self, key, value):
+        with self.get_connection() as conn:
+            conn.execute("INSERT OR REPLACE INTO system_settings (key, value) VALUES (?, ?)", (key, str(value)))
+
+    def get_setting(self, key, default=None):
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT value FROM system_settings WHERE key = ?", (key,)).fetchone()
+            return row["value"] if row else default
+        
+    # Code cho nhóm sử dụng máy
+    @handle_db_error
     def move_device_to_group(self, device_name, new_group_name):
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -120,6 +152,7 @@ class PlanModel:
                 cursor.execute("UPDATE devices SET group_id = ? WHERE device_name = ?", (new_group_id, device_name))
                 conn.commit()
 
+    @handle_db_error
     def generate_daily_plan_word(self, save_path, selected_tasks, device_name, cycle_info, plan_date_str):
         doc = Document()
         doc.add_heading('KẾ HOẠCH BẢO DƯỠNG TRANG BỊ TRONG NGÀY', level=1)
@@ -152,9 +185,10 @@ class PlanModel:
         doc.save(save_path)
 
     # Cập nhật dữ liệu cho danh mục định mức
+    @handle_db_error
     def get_all_norms(self):
         query = """
-            SELECT d.device_name, mc.cycle_code, mc.tech_name, mt.tt, mt.task_name, 
+            SELECT d.device_name, mc.cycle_code,  mt.tt, mt.task_name, 
                 mt.norm_workers, mt.norm_minutes, mt.tool, mt.material, mt.tckt, mt.result
             FROM master_tasks mt
             JOIN maintenance_cycles mc ON mt.cycle_id = mc.id
@@ -163,7 +197,8 @@ class PlanModel:
         """
         with self.get_connection() as conn:
             return [list(row) for row in conn.execute(query).fetchall()]
-        
+
+    @handle_db_error    
     def get_tasks(self, group_name, device_name, cycle_code):
         """
         Truy vấn danh sách công việc dựa trên Nhóm, Thiết bị và Mã chu kỳ.
@@ -177,7 +212,8 @@ class PlanModel:
                 WHERE g.group_name = ? AND d.device_name = ? AND c.cycle_code = ?
             """
             return conn.execute(query, (group_name, device_name, cycle_code)).fetchall()
-        
+    
+    @handle_db_error    
     def get_devices_by_group(self, group_name):
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -188,12 +224,14 @@ class PlanModel:
             """, (group_name,))
             return [row["device_name"] for row in cursor.fetchall()]
 
+    @handle_db_error
     def get_all_group_names(self):
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT group_name FROM groups")
             return [row["group_name"] for row in cursor.fetchall()]
     
+    @handle_db_error
     def update_all_norms(self, mapped_data_list):
         if not mapped_data_list: return False
 
@@ -230,8 +268,8 @@ class PlanModel:
                     # B. Xử lý Chu kỳ
                     cycle_key = (d_name, c_code)
                     if cycle_key not in cycle_cache:
-                        cursor.execute("INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name, tech_name) VALUES (?, ?, ?, ?)", 
-                                       (device_id, c_code, c_code, item['tech_name']))
+                        cursor.execute("INSERT INTO maintenance_cycles (device_id, cycle_code, cycle_name) VALUES (?, ?, ?)", 
+                                       (device_id, c_code, c_code))
                         cycle_cache[cycle_key] = cursor.lastrowid
                     cycle_id = cycle_cache[cycle_key]
 
@@ -251,6 +289,7 @@ class PlanModel:
                 return False
     
     # Lấy Phiếu số từ DB đưa vào setting_bar
+    @handle_db_error
     def get_all_phieu_names(self):
         """
         Lấy danh sách tên phiếu (cycle_code) từ bảng maintenance_cycles.
@@ -273,3 +312,58 @@ class PlanModel:
         except Exception as e:
             print(f"[ERROR] Không thể lấy danh sách phiếu từ maintenance_cycles: {e}")
             return []
+    
+    # Lọc máy (trang bị) khi biết phiếu số (01,02,03,04) và nhóm
+    @handle_db_error
+    def get_devices_by_group_and_cycle(self, group_name, cycle_code):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # Lọc theo Nhóm VÀ có chứa Phiếu công nghệ (maintenance_cycles)
+            query = """
+                SELECT DISTINCT d.device_name 
+                FROM devices d
+                JOIN groups g ON d.group_id = g.id
+                JOIN maintenance_cycles mc ON d.id = mc.device_id
+                WHERE g.group_name = ? AND mc.cycle_code = ?
+            """
+            cursor.execute(query, (group_name, cycle_code))
+            return [row["device_name"] for row in cursor.fetchall()]
+    
+    # Các hàm thêm xoá tên nhóm:
+    def add_new_group(self, group_name):        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO groups (group_name) VALUES (?)", (group_name.strip(),))
+            conn.commit()
+            
+    # def add_group(self, name):
+    #     with self.get_connection() as conn:
+    #         conn.execute("INSERT INTO groups (group_name) VALUES (?)", (name,))
+    #         conn.commit()
+
+    def rename_group(self, old_name, new_name):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Lấy ID của nhóm cũ
+            cursor.execute("SELECT id FROM groups WHERE group_name = ?", (old_name,))
+            row = cursor.fetchone()
+            if row:
+                group_id = row["id"]
+                # 2. Đổi tên nhóm trong bảng groups
+                cursor.execute("UPDATE groups SET group_name = ? WHERE id = ?", (new_name, group_id))
+                conn.commit()
+
+    def delete_group(self, name):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Lấy ID của nhóm cần xóa
+            cursor.execute("SELECT id FROM groups WHERE group_name = ?", (name,))
+            row = cursor.fetchone()
+            if row:
+                group_id = row["id"]
+                # 2. Chuyển các máy trong nhóm đó về nhóm "Chưa phân loại"
+                # Giả định ID của nhóm "Chưa phân loại" là 1 (hoặc bạn cần query nó ra)
+                cursor.execute("UPDATE devices SET group_id = 1 WHERE group_id = ?", (group_id,))
+                # 3. Xóa nhóm
+                cursor.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+                conn.commit()
