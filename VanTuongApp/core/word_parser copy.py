@@ -123,40 +123,39 @@ def parse_maintenance_word_file(file_path):
     devices_dict = {}
     
     current_device = None
-    current_tech = "Chưa xác định"
-    current_cycles = []
+    current_cycles = [] # Chỉ reset khi chắc chắn tìm thấy tiêu đề mới
 
-    # Duyệt tuần tự qua các phần tử của document
-    for item in doc.element.body:
-        # Nếu là đoạn văn (Paragraph) -> Kiểm tra tiêu đề
-        if item.tag.endswith('p'):
-            header = parse_header(item.text.strip())
-            for item in doc.element.body:
-                if item.tag.endswith('p'):
-                    header = parse_header(item.text.strip())
-                    if header:
-                        if 'cycles' in header: current_cycles = header['cycles']
-                        if 'device_name' in header:
-                            current_device = header['device_name']
-                            if current_device not in devices_dict:
-                                devices_dict[current_device] = DeviceMaintenance(current_device) # Cập nhật init
+    for element in doc.element.body:
+        # Xử lý đoạn văn (Tiêu đề thiết bị và mã phiếu)
+        if element.tag.endswith('p'):
+            # Convert element XML thành đối tượng Paragraph của docx
+            from docx.text.paragraph import Paragraph
+            p = Paragraph(element, doc)
+            header = parse_header(p.text.strip())
+            
+            if header:
+                if 'cycles' in header: 
+                    current_cycles = header['cycles']
+                if 'device_name' in header:
+                    current_device = header['device_name']
+                    if current_device not in devices_dict:
+                        devices_dict[current_device] = DeviceMaintenance(current_device)
 
-        # Nếu là bảng (Table) -> Xử lý dữ liệu
-        elif item.tag.endswith('tbl'):
-            table = next((t for t in doc.tables if t._element == item), None)
-            if table and current_device and current_cycles:
+        # Xử lý bảng
+        elif element.tag.endswith('tbl'):
+            from docx.table import Table
+            table = Table(element, doc)
+            
+            # Chỉ nạp nếu đã có thiết bị và phiếu xác định
+            if current_device and current_cycles:
                 device_obj = devices_dict[current_device]
                 prev_state = {'tool': "", 'mat': "", 'tckt': ""}
                 
-                # Bỏ qua dòng tiêu đề bảng (table.rows[0])
                 for row in table.rows[1:]:
                     task, prev_state = parse_table_row(row, prev_state)
                     if task:
-                        # Gán task vào tất cả các phiếu số tìm thấy ở tiêu đề phía trên
+                        # Gán task vào tất cả các phiếu đã tìm thấy ở trên
                         for cycle in current_cycles:
                             device_obj.add_task(cycle, task)
-                
-                # Reset cycle để tránh gán nhầm nếu có bảng lẻ không có tiêu đề kèm theo
-                current_cycles = [] 
-                
+    
     return list(devices_dict.values())

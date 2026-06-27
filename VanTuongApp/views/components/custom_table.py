@@ -57,32 +57,33 @@ class CustomTableWidget(QTableWidget):
     def apply_default_style(self):
         """Thiết lập phong cách giống bảng tính Excel chuyên nghiệp"""
         style = """
-            QTableWidget {
-                gridline-color: #d1d1d1; /* Đường kẻ mỏng, màu xám trung tính */
-                background-color: #ffffff;
-                alternate-background-color: #f7f9fc; /* Màu xám xanh cực nhạt của Excel */
-                selection-background-color: #cfe8fc; /* Màu xanh siêu nhạt của Excel */
-                selection-color: #000000;
-                border: 1px solid #bcbcbc;
+            QTableWidget { 
+                gridline-color: #e0e0e0; 
+                background-color: #ffffff; 
+                alternate-background-color: #f2f7f9; 
+                border: 1px solid #d1d1d1;
+                selection-background-color: transparent; /* Tắt mặc định để kiểm soát bằng item:selected */
             }
-            
-            QTableWidget::item {
-                padding: 5px;
-                border: none;
+            QHeaderView::section { 
+                background-color: #417690; 
+                color: #ffffff; 
+                padding: 8px; 
+                border: 1px solid #355d71; 
+                font-weight: bold;
+                font-size: 13px;
             }
-
-            QTableWidget::item:selected {
-                background-color: #cfe8fc !important; /* Xanh nhạt tinh tế */
+            QTableWidget::item { 
+                padding: 5px; 
+            }
+            /* Hiệu ứng di chuột vào (Hover) - Cốt lõi của giao diện Django */
+            QTableWidget::item:hover {
+                background-color: #d1e5ef; 
                 color: #000000;
             }
-
-            QHeaderView::section {
-                background-color: #e5e5e5;
-                padding: 6px;
-                border: 1px solid #bcbcbc;
-                font-weight: bold;
-                color: #333333;
-                border-bottom: 2px solid #999999; /* Tạo khối cho header */
+            /* Khi hàng được chọn */
+            QTableWidget::item:selected {
+                background-color: #79aec8; 
+                color: #ffffff;
             }
         """
         self.setStyleSheet(style)

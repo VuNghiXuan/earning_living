@@ -32,17 +32,38 @@ class MainController(QMainWindow):
         # Gọi khởi tạo ban đầu
         self.refresh_group_dropdown()
 
+    # def on_btn_save_config_clicked(self):
+    #     s = self.main_view.tab_setting
+    #     # Lấy dữ liệu từ dictionary time_fields đã được tối ưu trong bản trước
+    #     am_s = s.time_fields['am_start'].time().toString("HH:mm")
+    #     am_e = s.time_fields['am_end'].time().toString("HH:mm")
+        
+    #     # Bạn có thể gọi trực tiếp hàm lưu của SettingTabWidget để đồng bộ
+    #     s.save_all_settings()
+        
+    #     # msg = f"Đã cập nhật cấu hình:\nSáng: {am_s} - {am_e}\n(Dữ liệu đã lưu vào config.json)"
+    #     # QMessageBox.information(self, "Hệ thống", msg)
+
+    # def on_btn_save_config_clicked(self):
+    #     # Gọi hàm lưu và kiểm tra kết quả trả về
+    #     success = self.main_view.tab_setting.save_all_settings()
+        
+    #     if success:
+    #         QMessageBox.information(self, "Thành công", "Đã lưu cấu hình hệ thống!")
+    #     else:
+    #         QMessageBox.critical(self, "Lỗi", "Có lỗi xảy ra khi lưu cấu hình.")
+
+    # Trong MainController.py (hàm xử lý lưu cấu hình)
+
     def on_btn_save_config_clicked(self):
-        s = self.main_view.tab_setting
-        # Lấy dữ liệu từ dictionary time_fields đã được tối ưu trong bản trước
-        am_s = s.time_fields['am_start'].time().toString("HH:mm")
-        am_e = s.time_fields['am_end'].time().toString("HH:mm")
+        # 1. Lưu vào model
+        self.main_view.tab_setting.save_all_settings()
         
-        # Bạn có thể gọi trực tiếp hàm lưu của SettingTabWidget để đồng bộ
-        s.save_all_settings()
+        # 2. Thông báo cho các tab khác cập nhật
+        # Giả sử main_view có truy cập tới filter_widget
+        self.main_view.tab_plan.filter_widget.refresh_data()
         
-        # msg = f"Đã cập nhật cấu hình:\nSáng: {am_s} - {am_e}\n(Dữ liệu đã lưu vào config.json)"
-        # QMessageBox.information(self, "Hệ thống", msg)
+        QMessageBox.information(self, "Hệ thống", "Đã cập nhật cấu hình và làm mới bộ lọc!")
 
     def refresh_group_dropdown(self):
         """Đổ dữ liệu nhóm vào ComboBox"""
@@ -84,6 +105,24 @@ class MainController(QMainWindow):
             
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", str(e))
+
+    # Trong hàm xử lý hoặc sau khi chọn bộ lọc:
+def refresh_table_data(self):
+    """
+    Đẩy dữ liệu lên bảng kế hoạch
+    """
+
+    phieu = self.filter_widget.cb_phieu.currentText()
+    group = self.filter_widget.cb_group.currentText()
+    
+    # 1. Lấy dữ liệu từ DB (Hàm này bạn cần viết trong PlanModel)
+    # Trả về list các dict: [{'name': '...', 'std_people': 2, ...}]
+    data = self.db.get_full_plan_details(phieu, group)
+    
+    # 2. Đẩy dữ liệu vào bảng
+    self.plan_table.populate_table(data)
+
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

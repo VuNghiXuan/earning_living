@@ -69,16 +69,39 @@ class SidebarWidget(QWidget):
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
         # Định hình style cho thanh cuộn tiệp màu tối với hệ thống (Dark Theme Scrollbar)
+        # self.scroll_area.setStyleSheet(f"""
+        #     QScrollArea {{ border: none; background-color: transparent; }}
+        #     QScrollBar:vertical {{
+        #         background: {cfg.COLOR_BG_DARK}; width: 6px; margin: 0px;
+        #     }}
+        #     QScrollBar::handle:vertical {{
+        #         background: #555555; min-height: 20px; border-radius: 3px;
+        #     }}
+        #     QScrollBar::handle:vertical:hover {{ background: {cfg.COLOR_PRIMARY}; }}
+        #     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ border: none; background: none; }}
+        # """)
+
         self.scroll_area.setStyleSheet(f"""
-            QScrollArea {{ border: none; background-color: transparent; }}
+            QScrollArea {{ 
+                border: none; 
+                background-color: #212121; 
+            }}
             QScrollBar:vertical {{
-                background: {cfg.COLOR_BG_DARK}; width: 6px; margin: 0px;
+                background: #212121; 
+                width: 8px; 
+                margin: 0px;
             }}
             QScrollBar::handle:vertical {{
-                background: #555555; min-height: 20px; border-radius: 3px;
+                background: #444444; 
+                min-height: 20px; 
+                border-radius: 4px;
             }}
-            QScrollBar::handle:vertical:hover {{ background: {cfg.COLOR_PRIMARY}; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ border: none; background: none; }}
+            QScrollBar::handle:vertical:hover {{ 
+                background: #666666; 
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ 
+                border: none; background: none; 
+            }}
         """)
         
         # Tạo widget chứa danh sách nút bấm bên trong vùng cuộn

@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QGroupBox, QVBoxLayout, QLabel, 
                                QComboBox, QDateEdit, QPushButton, QSpinBox, QGridLayout)
-from PySide6.QtCore import QDate
+from PySide6.QtCore import QDate, Qt
 import config.app_config as cfg
 
 class FilterWidget(QGroupBox):
@@ -45,14 +45,10 @@ class FilterWidget(QGroupBox):
         # 2. Xây dựng Layout
         grid_layout = QGridLayout()
         grid_layout.setContentsMargins(5, 5, 5, 5)
-        # Thiết lập cột (Label không giãn, Widget giãn)
         for i in range(8):
-            if i % 2 == 0: 
-                grid_layout.setColumnStretch(i, 0) # Label giữ nguyên vị trí
-            else:
-                grid_layout.setColumnStretch(i, 1) # Widget giãn ra
+            grid_layout.setColumnStretch(i, 1 if i % 2 != 0 else 0)
                 
-        grid_layout.setSpacing(5) # Giảm spacing xuống 5 thay vì 10
+        grid_layout.setSpacing(5)
         grid_layout.addWidget(QLabel("Kế hoạch BQDP:"), 0, 0)
         grid_layout.addWidget(self.cb_phieu, 0, 1)
         grid_layout.addWidget(QLabel("Số ngày thực hiện:"), 0, 2)
@@ -64,9 +60,9 @@ class FilterWidget(QGroupBox):
 
         grid_layout.addWidget(QLabel("Nhóm thực hiện:"), 1, 0)
         grid_layout.addWidget(self.cb_group, 1, 1)
-        grid_layout.addWidget(QLabel("Trang bị:"), 1, 2)
+        grid_layout.addWidget(QLabel("Trang bị/Máy:"), 1, 2)
         grid_layout.addWidget(self.cb_device, 1, 3)
-        grid_layout.addWidget(QLabel("Nhân viên:"), 1, 4)
+        grid_layout.addWidget(QLabel("Số nhân viên:"), 1, 4)
         grid_layout.addWidget(self.spin_nhan_vien, 1, 5)
         grid_layout.addWidget(self.btn_tao_phieu, 1, 6, 1, 2)
 
@@ -74,28 +70,26 @@ class FilterWidget(QGroupBox):
         main_v_layout.addLayout(grid_layout)
         self.setFixedHeight(120)
 
-        # 3. Kết nối sự kiện
-        self.cb_phieu.currentIndexChanged.connect(self.load_duration_from_db)
+        # 3. Kết nối sự kiện & Khởi tạo dữ liệu ban đầu
         self.spin_duration.valueChanged.connect(lambda: self.update_logic('duration'))
         self.date_start.dateChanged.connect(lambda: self.update_logic('start'))
         self.date_end.dateChanged.connect(lambda: self.update_logic('end'))
-        self.cb_group.currentIndexChanged.connect(self.update_devices_list)
-        self.cb_phieu.currentIndexChanged.connect(self.update_devices_list)
         
-        self.load_groups_to_cb()
+        self.cb_phieu.currentIndexChanged.connect(lambda: self.update_filters('phieu'))
+        self.cb_group.currentIndexChanged.connect(lambda: self.update_filters('group'))
+       
+        self.init_data()
 
-    def load_duration_from_db(self):
-        """Lấy số ngày từ DB dựa trên tên phiếu"""
-        phieu_name = self.cb_phieu.currentText()
-        if phieu_name == "Tất cả loại phiếu": return
-
-        # Gọi hàm get_setting từ model (db) của bạn
-        duration = self.db.get_setting(f"deadline_{phieu_name}", "0")
-        
-        self.spin_duration.blockSignals(True)
-        self.spin_duration.setValue(int(duration))
-        self.spin_duration.blockSignals(False)
-        self.update_logic('duration')
+    def init_data(self):
+        """Nạp dữ liệu lần đầu"""
+        self.cb_group.blockSignals(True)
+        self.cb_phieu.blockSignals(True)
+        self.cb_group.addItem("-- Chọn nhóm --")
+        self.cb_group.addItems(self.db.get_all_group_names() or [])
+        self.cb_phieu.addItem("-- Chọn phiếu --")
+        self.cb_phieu.addItems(self.db.get_all_phieu_names() or [])
+        self.cb_group.blockSignals(False)
+        self.cb_phieu.blockSignals(False)
 
     def update_logic(self, trigger_source):
         self.spin_duration.blockSignals(True)
@@ -112,20 +106,93 @@ class FilterWidget(QGroupBox):
             self.spin_duration.blockSignals(False)
             self.date_start.blockSignals(False)
             self.date_end.blockSignals(False)
-    
-    def load_groups_to_cb(self):
-        self.cb_group.clear()
-        self.cb_group.addItem("Chưa phân loại")
-        self.cb_group.addItems(self.db.get_all_group_names() or [])
 
-    def update_devices_list(self):
-        group_name = self.cb_group.currentText()
-        phieu_name = self.cb_phieu.currentText()
-        if not group_name or not phieu_name or phieu_name == "Tất cả loại phiếu":
-            self.cb_device.clear()
-            return
+    def refresh_data(self):
+        """Làm mới toàn bộ dữ liệu bộ lọc từ DB"""
+        self.cb_group.blockSignals(True)
+        self.cb_phieu.blockSignals(True)
         self.cb_device.blockSignals(True)
-        self.cb_device.clear()
-        devices = self.db.get_devices_by_group_and_cycle(group_name, phieu_name)
-        self.cb_device.addItems(devices if devices else ["Không có máy phù hợp"])
+        
+        # 1. Lưu giá trị hiện tại (nếu muốn giữ lựa chọn của user)
+        current_phieu = self.cb_phieu.currentText()
+        current_group = self.cb_group.currentText()
+        
+        # 2. Làm mới danh sách Nhóm
+        self.cb_group.clear()
+        self.cb_group.addItem("-- Chọn nhóm --")
+        self.cb_group.addItems(self.db.get_all_group_names() or [])
+        
+        # 3. Làm mới danh sách Phiếu
+        self.cb_phieu.clear()
+        self.cb_phieu.addItem("-- Chọn phiếu --")
+        self.cb_phieu.addItems(self.db.get_all_phieu_names() or [])
+        
+        # 4. Khôi phục lựa chọn cũ nếu còn tồn tại trong danh sách mới
+        if self.cb_group.findText(current_group) != -1:
+            self.cb_group.setCurrentText(current_group)
+        if self.cb_phieu.findText(current_phieu) != -1:
+            self.cb_phieu.setCurrentText(current_phieu)
+            
+        self.cb_group.blockSignals(False)
+        self.cb_phieu.blockSignals(False)
         self.cb_device.blockSignals(False)
+        
+        # 5. Cập nhật lại máy
+        self.update_filters('group')
+
+    def update_filters(self, trigger_source):
+        # Lưu giá trị cũ
+        val_phieu = self.cb_phieu.currentText()
+        val_group = self.cb_group.currentText()
+        
+        self.cb_group.blockSignals(True)
+        self.cb_phieu.blockSignals(True)
+        self.cb_device.blockSignals(True)
+
+        try:
+            phieu_val = val_phieu if val_phieu != "-- Chọn phiếu --" else None
+            group_val = val_group if val_group not in ["-- Chọn nhóm --", "Chưa phân loại"] else None
+
+            if trigger_source == 'phieu':
+                # 1. Cập nhật Nhóm
+                groups = self.db.get_groups_by_cycle(phieu_val)
+                self.cb_group.clear()
+                self.cb_group.addItem("-- Chọn nhóm --")
+                if groups: self.cb_group.addItems(groups)
+                
+                # 2. Cập nhật Máy (Lọc theo cả Phiếu và Nhóm hiện tại)
+                devices = self.db.get_devices_by_filter(cycle_code=phieu_val, group_name=group_val)
+                self.cb_device.clear()
+                if devices: self.cb_device.addItems(devices)
+
+            elif trigger_source == 'group':
+                # 1. Cập nhật Phiếu
+                cycles = self.db.get_cycles_by_group(group_val)
+                self.cb_phieu.clear()
+                self.cb_phieu.addItem("-- Chọn phiếu --")
+                if cycles: self.cb_phieu.addItems(cycles)
+                
+                # 2. Cập nhật Máy (Lọc theo cả Phiếu và Nhóm hiện tại)
+                # Lưu ý: Lúc này phieu_val có thể đã bị "rỗng" do clear, 
+                # cần kiểm tra lại nếu muốn giữ filter phiếu cũ
+                devices = self.db.get_devices_by_filter(cycle_code=phieu_val, group_name=group_val)
+                self.cb_device.clear()
+                if devices: self.cb_device.addItems(devices)
+
+        finally:
+            # KHÔI PHỤC GIÁ TRỊ: Chỉ khôi phục nếu giá trị vẫn tồn tại trong danh sách mới
+            if phieu_val and self.cb_phieu.findText(phieu_val) != -1:
+                self.cb_phieu.setCurrentText(phieu_val)
+            else:
+                self.cb_phieu.setCurrentIndex(0) # Reset về "-- Chọn phiếu --"
+
+            if group_val and self.cb_group.findText(group_val) != -1:
+                self.cb_group.setCurrentText(group_val)
+            else:
+                self.cb_group.setCurrentIndex(0) # Reset về "-- Chọn nhóm --"
+
+            self.cb_device.blockSignals(False)
+            self.cb_group.blockSignals(False)
+            self.cb_phieu.blockSignals(False)
+    
+    

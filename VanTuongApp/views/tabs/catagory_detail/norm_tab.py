@@ -24,9 +24,11 @@ class NormTabWidget(QWidget):
         toolbar_layout.addWidget(self.search_bar)
 
         self.btn_add = QPushButton("➕ Thêm")
+        self.btn_add.setEnabled(False)
         self.btn_add.clicked.connect(self.add_empty_row)
         
         self.btn_delete = QPushButton("🗑️ Xóa")
+        self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self.delete_selected_row)
         
         self.btn_import_word = QPushButton("📁 Nạp từ Word")
@@ -41,7 +43,11 @@ class NormTabWidget(QWidget):
         self.table_norms = CustomTableWidget()
         # self.table_norms.setColumnCount(11) 
         self.set_headers() # Hàm thiết lập tên cột
+        # Kiểm tra config xem ORDER nằm ở đâu, dùng chính xác index đó
+        order_col_idx = NORMS_TABLE_CONFIG["columns"]["ORDER"]["idx"]
+        self.table_norms.setColumnHidden(order_col_idx, True)
         self.table_norms.apply_style(TABLE_WIDGET_STYLE)
+
         
         self.table_norms.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_norms.customContextMenuRequested.connect(self.show_context_menu)
@@ -132,6 +138,9 @@ class NormTabWidget(QWidget):
             item = QTableWidgetItem("")
             item.setFlags(Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             self.table_norms.setItem(row, col, item)
+        # Gán giá trị mặc định cho cột Order là 0 hoặc số dòng hiện tại
+        order_col_idx = NORMS_TABLE_CONFIG["columns"]["ORDER"]["idx"]
+        self.table_norms.setItem(row, order_col_idx, QTableWidgetItem(str(row)))
            
     def delete_selected_row(self):
         for row in sorted(set(idx.row() for idx in self.table_norms.selectedIndexes()), reverse=True):
@@ -140,9 +149,21 @@ class NormTabWidget(QWidget):
     def save_to_database(self):
         # 1. Thu thập dữ liệu từ bảng
         current_data = []
+        # Lấy index của cột ORDER từ config để xác định vị trí cần gán lại
+        order_idx = NORMS_TABLE_CONFIG["columns"]["ORDER"]["idx"]
         col_count = self.table_norms.columnCount()
+
         for r in range(self.table_norms.rowCount()):
-            row_data = [self.table_norms.item(r, c).text() if self.table_norms.item(r, c) else "" for c in range(col_count)]
+            row_data = []
+            for c in range(col_count):
+                if c == order_idx:
+                    # Gán cứng thứ tự dòng hiện tại (row index) vào dữ liệu
+                    row_data.append(str(r))
+                else:
+                    # Lấy text bình thường từ các cột khác
+                    item = self.table_norms.item(r, c)
+                    row_data.append(item.text() if item else "")
+            
             current_data.append(row_data)
 
         # 2. Gọi hàm callback đã truyền vào để xử lý lưu DB

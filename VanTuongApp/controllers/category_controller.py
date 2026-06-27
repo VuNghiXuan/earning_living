@@ -38,32 +38,62 @@ class CategoryController:
         finally:
             QApplication.restoreOverrideCursor()
 
+    # def handle_save_to_db(self, data_from_table):
+    #     """
+    #     Dữ liệu từ bảng đã được View gom lại theo thứ tự hiển thị hiện tại.
+    #     Hàm này dùng mapper để map lại về đúng trường DB.
+    #     """
+    #     try:
+    #         mapped_list = []
+    #         for row in data_from_table:
+    #             # map_row_to_dict giờ đã dùng cấu hình đúng của DB
+    #             item = map_row_to_dict(row, NORMS_TABLE_CONFIG)
+                
+    #             # Ép kiểu dữ liệu an toàn
+    #             item['workers'] = int(item.get('workers', 0)) if str(item.get('workers', '')).isdigit() else 0
+    #             item['minutes'] = int(item.get('minutes', 0)) if str(item.get('minutes', '')).isdigit() else 0
+                
+    #             mapped_list.append(item)
+            
+    #         if mapped_list:
+    #             if self.model.update_all_norms(mapped_list):
+    #                 # QMessageBox.information(self.main, "Thành công", "Đã lưu dữ liệu định mức!")
+    #                 self.refresh_norms_table()
+    #                 return True
+    #         return False
+    #     except Exception as e:
+    #         print(f"[ERROR] handle_save_to_db: {e}")
+    #         QMessageBox.critical(self.main, "Lỗi", f"Không thể lưu: {str(e)}")
+    #         return False
+    
+
     def handle_save_to_db(self, data_from_table):
         """
-        Dữ liệu từ bảng đã được View gom lại theo thứ tự hiển thị hiện tại.
-        Hàm này dùng mapper để map lại về đúng trường DB.
+         Dữ liệu từ bảng đã được View gom lại theo thứ tự hiển thị hiện tại.
+         Hàm này dùng mapper để map lại về đúng trường DB.
         """
         try:
             mapped_list = []
-            for row in data_from_table:
-                # map_row_to_dict giờ đã dùng cấu hình đúng của DB
+            for row_idx, row in enumerate(data_from_table):
+                # 1. Map dữ liệu
                 item = map_row_to_dict(row, NORMS_TABLE_CONFIG)
                 
-                # Ép kiểu dữ liệu an toàn
-                item['workers'] = int(item.get('workers', 0)) if str(item.get('workers', '')).isdigit() else 0
-                item['minutes'] = int(item.get('minutes', 0)) if str(item.get('minutes', '')).isdigit() else 0
+                # 2. Gán cứng order_index bằng vị trí dòng trong bảng (để lưu vào DB)
+                item['order_index'] = row_idx 
+                
+                # 3. Ép kiểu an toàn
+                item['workers'] = int(item.get('WORKERS', 0)) if str(item.get('WORKERS', '')).isdigit() else 0
+                item['minutes'] = int(item.get('MINUTES', 0)) if str(item.get('MINUTES', '')).isdigit() else 0
                 
                 mapped_list.append(item)
             
-            if mapped_list:
-                if self.model.update_all_norms(mapped_list):
-                    # QMessageBox.information(self.main, "Thành công", "Đã lưu dữ liệu định mức!")
-                    self.refresh_norms_table()
-                    return True
+            # 4. Lưu
+            if self.model.update_all_norms(mapped_list):
+                self.refresh_norms_table()
+                return True
             return False
         except Exception as e:
             print(f"[ERROR] handle_save_to_db: {e}")
-            QMessageBox.critical(self.main, "Lỗi", f"Không thể lưu: {str(e)}")
             return False
         
     def add_group(self):

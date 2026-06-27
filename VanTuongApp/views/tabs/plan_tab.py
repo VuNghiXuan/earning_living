@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QTableWidget, QHeaderView
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QTableWidget, QHeaderView, QTableWidgetItem
 from views.components.plan_filter_widget import FilterWidget
 from views.components.plan_table_component import PlanTable
 import config.app_config as cfg
@@ -7,8 +7,11 @@ class PlanTabWidget(QWidget):
     def __init__(self, model, parent=None):
         super().__init__(parent)
         self.model = model
-        self.deadlines = {}  # Khởi tạo dict lưu deadline
-        self.filter_widget = FilterWidget() # Sử dụng widget bộ lọc
+        self.deadlines = {}
+        
+        # Khởi tạo các thành phần
+        self.filter_widget = FilterWidget()
+        self.table = PlanTable(db=self.model)
         
         self.init_ui()
         self.load_initial_data()
@@ -22,8 +25,7 @@ class PlanTabWidget(QWidget):
         self.sub_tab_create = QWidget()
         create_layout = QVBoxLayout(self.sub_tab_create)
         
-        create_layout.addWidget(self.filter_widget) # Đưa bộ lọc vào
-        self.table = PlanTable()
+        create_layout.addWidget(self.filter_widget)
         create_layout.addWidget(self.table)
         
         # --- TAB 2 & 3 ---
@@ -35,76 +37,66 @@ class PlanTabWidget(QWidget):
         self.tab_widget.addTab(self.sub_tab_stats, "📊 Thống kê")
         main_layout.addWidget(self.tab_widget)
 
-        # Kết nối tín hiệu
+        # KẾT NỐI SỰ KIỆN TẠI ĐÂY
+        # Khi bộ lọc thay đổi, vừa cập nhật định mức vừa cập nhật bảng
         self.filter_widget.cb_phieu.currentIndexChanged.connect(self.on_phieu_changed)
+        self.filter_widget.cb_phieu.currentIndexChanged.connect(self.refresh_plan_table)
+        self.filter_widget.cb_group.currentIndexChanged.connect(self.refresh_plan_table)
 
     def load_initial_data(self):
-        """Nạp dữ liệu từ Database vào các bộ lọc và tải cấu hình deadline."""
-        
-        # 1. Nạp danh sách loại phiếu
-        phieu_items = []
+        """Nạp dữ liệu từ Database vào bộ lọc."""
+        # Nạp tên phiếu
         if hasattr(self.model, 'get_all_phieu_names'):
+            phieu_items = self.model.get_all_phieu_names() or []
             self.filter_widget.cb_phieu.blockSignals(True)
             self.filter_widget.cb_phieu.clear()
             self.filter_widget.cb_phieu.addItem("-- Chọn phiếu BQDP --")
-            
-            raw_phieu = self.model.get_all_phieu_names() or []
-            phieu_items = [str(item) for item in raw_phieu if item]
-            self.filter_widget.cb_phieu.addItems(phieu_items)
+            self.filter_widget.cb_phieu.addItems([str(i) for i in phieu_items if i])
             self.filter_widget.cb_phieu.blockSignals(False)
             
-        # 2. Nạp danh mục nhóm (Norms)
+            # Load deadlines
+            for p in phieu_items:
+                val = self.model.get_setting(f"deadline_{p}", "0")
+                self.deadlines[str(p)] = int(val) if val.isdigit() else 0
+
+        # Nạp danh mục nhóm
         if hasattr(self.model, 'get_all_norms'):
+            groups = self.model.get_all_norms() or []
             self.filter_widget.cb_group.blockSignals(True)
             self.filter_widget.cb_group.clear()
             self.filter_widget.cb_group.addItem("Tất cả các nhóm")
-            
-            raw_groups = self.model.get_all_norms() or []
-            group_items = [str(item) for item in raw_groups if item]
-            self.filter_widget.cb_group.addItems(group_items)
+            self.filter_widget.cb_group.addItems([str(g) for g in groups if g])
             self.filter_widget.cb_group.blockSignals(False)
 
-        # 3. LẤY SỐ NGÀY THỰC HIỆN TỪ DATABASE (Bảng system_settings)
-        if hasattr(self.model, 'get_setting'):
-            for p in phieu_items:
-                key = f"deadline_{p}"
-                val = self.model.get_setting(key, "0") 
-                try:
-                    self.deadlines[p] = int(val)
-                except ValueError:
-                    self.deadlines[p] = 0
-            # print(f"Đã load deadlines: {self.deadlines}")
-
     def on_phieu_changed(self, index):
-        """Xử lý khi thay đổi loại phiếu để cập nhật định mức vào spin_duration"""
+        """Cập nhật số ngày thực hiện khi chọn phiếu."""
         selected_phieu = self.filter_widget.cb_phieu.currentText()
-        
-        # Nếu chọn "Tất cả", có thể reset spin_duration về 0 hoặc giữ nguyên tùy ý bạn
-        if selected_phieu == "-- Chọn phiếu BQDP----":
-            # Ví dụ: reset về 0
-            self.filter_widget.spin_duration.setValue(0)
-            return
-
-        # Cập nhật giá trị vào spin_duration từ dict đã load từ DB
         if selected_phieu in self.deadlines:
-            days = self.deadlines[selected_phieu]
-            
-            # Cập nhật giá trị mà không kích hoạt sự kiện update_logic nhiều lần
             self.filter_widget.spin_duration.blockSignals(True)
-            self.filter_widget.spin_duration.setValue(days)
+            self.filter_widget.spin_duration.setValue(self.deadlines[selected_phieu])
             self.filter_widget.spin_duration.blockSignals(False)
-            
-            # Sau khi set giá trị, gọi update_logic để tính lại ngày kết thúc
             self.filter_widget.update_logic('duration')
-            
-            print(f"Đã cập nhật định mức '{selected_phieu}': {days} ngày")
+
+    def refresh_plan_table(self):
+        """Lấy dữ liệu từ Model và đổ vào bảng."""
+        phieu = self.filter_widget.cb_phieu.currentText()
+        group = self.filter_widget.cb_group.currentText()
+        
+        # Xử lý giá trị mặc định cho Model
+        phieu_val = phieu if phieu != "-- Chọn phiếu BQDP --" else None
+        group_val = group if group != "Tất cả các nhóm" else None
+        
+        try:
+            data = self.model.get_tasks_by_filter(group_val, phieu_val)
+            self.table.populate_table(data)
+        except Exception as e:
+            print(f"[ERROR] Không thể refresh bảng kế hoạch: {e}")
 
     def setup_history_tab(self):
         self.sub_tab_history = QWidget()
         layout = QVBoxLayout(self.sub_tab_history)
         self.table_history = QTableWidget(0, 4)
         self.table_history.setHorizontalHeaderLabels(["Ngày lập", "Thiết bị", "Loại phiếu", "File"])
-        self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_history)
 
     def setup_stats_tab(self):
@@ -112,5 +104,4 @@ class PlanTabWidget(QWidget):
         layout = QVBoxLayout(self.sub_tab_stats)
         self.table_stats = QTableWidget(0, 4)
         self.table_stats.setHorizontalHeaderLabels(["Năm", "Tổng giờ BD", "Số lượt", "Tỷ lệ (%)"])
-        self.table_stats.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_stats)
