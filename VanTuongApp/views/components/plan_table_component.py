@@ -1,32 +1,23 @@
 from PySide6.QtWidgets import (QTableWidget, QTableWidgetItem, QHeaderView, 
                                QSpinBox, QComboBox, QCheckBox, QWidget, 
-                               QHBoxLayout, QTextEdit, QAbstractItemView)
+                               QHBoxLayout, QTextEdit, QAbstractItemView, QLabel)
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QTextOption
+from PySide6.QtGui import QTextOption, QFont, QColor
+from itertools import groupby
 
 class AutoResizeTextEdit(QTextEdit):
-    """Widget tùy chỉnh tự động rớt dòng và báo chiều cao cho bảng"""
     def __init__(self, text="", parent=None):
         super().__init__(text, parent)
         self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setStyleSheet("""
-            QTextEdit {
-                border: none;
-                background: transparent;
-                padding: 5px;
-                font-size: 13px;
-            }
-        """)
+        self.setStyleSheet("border: none; background: transparent; padding: 2px; font-size: 13px;")
 
     def sizeHint(self):
+        # Tính toán chiều cao cần thiết dựa trên nội dung
         doc = self.document()
-        # Tính toán chiều cao dựa trên độ rộng thực tế của cột
-        width = self.viewport().width()
-        doc.setTextWidth(width)
-        height = doc.size().height() + 10
-        return QSize(width, int(height))
+        height = doc.size().height()
+        return QSize(self.width(), int(height) + 5)
 
 class PlanTable(QTableWidget):
     def __init__(self, db, parent=None):
@@ -34,31 +25,29 @@ class PlanTable(QTableWidget):
         self.db = db
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        
         self.setup_header()
         self.apply_style()
 
     def setup_header(self):
-        headers = ["Chọn", "STT", "Nội dung", "Số người", "Thời gian", "Phương tiện", "Vật tư", "TCKT", "Kết quả"]
+        headers = ["Chọn", "STT", "Nội dung công việc", "Số người", "Thời gian(phút)", "Phương tiện", "Vật tư", "TCKT", "Kết quả"]
         self.setColumnCount(len(headers))
         self.setHorizontalHeaderLabels(headers)
-        
         header = self.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
-        # Giãn cột nội dung (cột 2) để chiếm không gian
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        # Cố định độ rộng tối thiểu cho các cột quan trọng
-        for i in range(len(headers)):
-            if i != 2: self.setColumnWidth(i, 150)
+        widths = [60, 50, 0, 80, 150, 150, 150, 150, 150]
+        for i, w in enumerate(widths):
+            if w > 0:
+                self.setColumnWidth(i, w)
+                header.setSectionResizeMode(i, QHeaderView.Fixed)
+            else:
+                header.setSectionResizeMode(i, QHeaderView.Stretch)
 
     def apply_style(self):
-        style = """
+        self.setStyleSheet("""
             QTableWidget { 
                 gridline-color: #e0e0e0; 
                 background-color: #ffffff; 
                 alternate-background-color: #f2f7f9; 
                 border: 1px solid #d1d1d1;
-                selection-background-color: transparent; /* Tắt mặc định để kiểm soát bằng item:selected */
             }
             QHeaderView::section { 
                 background-color: #417690; 
@@ -68,59 +57,113 @@ class PlanTable(QTableWidget):
                 font-weight: bold;
                 font-size: 13px;
             }
-            QTableWidget::item { 
-                padding: 5px; 
-            }
-            /* Hiệu ứng di chuột vào (Hover) - Cốt lõi của giao diện Django */
-            QTableWidget::item:hover {
-                background-color: #d1e5ef; 
-                color: #000000;
-            }
-            /* Khi hàng được chọn */
-            QTableWidget::item:selected {
-                background-color: #79aec8; 
-                color: #ffffff;
-            }
-        """
-        self.setStyleSheet(style)
+            QTableWidget::item { padding: 5px; }
+            QTableWidget::item:hover { background-color: #d1e5ef; color: #000000; }
+            QTableWidget::item:selected { background-color: #79aec8; color: #ffffff; }
+        """)
 
-    def populate_table(self, devices_data):
-        self.setRowCount(len(devices_data))
-        for row, device in enumerate(devices_data):
-            # 0. Checkbox
-            chk = QCheckBox(); chk.setChecked(True)
-            self.setCellWidget(row, 0, chk)
-            
-            # 1. TT
-            self.setItem(row, 1, QTableWidgetItem(str(device.get('tt', row + 1))))
-            
-            # 2. Nội dung (Dùng AutoResizeTextEdit để rớt dòng)
-            text_edit = AutoResizeTextEdit(str(device.get('task_name', '')))
-            self.setCellWidget(row, 2, text_edit)
-            
-            # 3. Số người
-            spin = QSpinBox(); spin.setValue(int(device.get('norm_workers', 1)))
-            self.setCellWidget(row, 3, spin)
-            
-            # 4. Thời gian
-            cb = QComboBox(); cb.addItems(["15", "30", "45", "60"])
-            cb.setCurrentText(str(device.get('norm_minutes', '30')))
-            self.setCellWidget(row, 4, cb)
-            
-            # 5-8. Các cột text khác (Dùng AutoResizeTextEdit cho tất cả để tránh bị che)
-            for col, key in enumerate(['tool', 'material', 'tckt', 'result'], 5):
-                text_edit_col = AutoResizeTextEdit(str(device.get(key, '')))
-                self.setCellWidget(row, col, text_edit_col)
+    def populate_table(self, payload):
+        tasks_data = payload.get("tasks", [])
+        self.metadata = payload.get("metadata", {})
+        
+        # Cập nhật nhãn tiêu đề phiếu (nếu UI có chứa header_label)
+        if hasattr(self, 'header_label'):
+            nhom = self.metadata.get('nhom_thuc_hien', '---')
+            so_phieu_chung = self.metadata.get('so_phieu', '---')
+            # self.header_label.setText(f"PHIẾU CÔNG NGHỆ: {so_phieu_chung} | NHÓM: {nhom}")
 
-        # Ép bảng cập nhật lại toàn bộ chiều cao các dòng
+        self.setUpdatesEnabled(False)
+        self.clearContents()
+        
+        tasks_data.sort(key=lambda x: x.get('device_name', ''))
+        self.setRowCount(len(tasks_data) + 20) 
+        
+        current_row = 0
+        grouped_tasks = groupby(tasks_data, key=lambda x: x.get('device_name', ''))
+        
+        for device_name, tasks in grouped_tasks:
+            self._draw_device_header(current_row, device_name)
+            current_row += 1
+            for task in tasks:
+                self._draw_task_row(current_row, task)
+                current_row += 1
+                
+        self.setRowCount(current_row)
         self.resizeRowsToContents()
+        self.setUpdatesEnabled(True)
 
+    def _draw_device_header(self, row, device_name):
+        """Vẽ tiêu đề máy và số phiếu tương ứng"""
+        trang_bi_list = self.metadata.get('trang_bi', [])
+        so_phieu = next((item.get('so_phieu') for item in trang_bi_list if item.get('ten_may') == device_name), "---")
+        
+        header_text = f" MÁY: {device_name} | SỐ PHIẾU: {so_phieu}"
+        item = QTableWidgetItem(header_text)
+        item.setBackground(QColor("#d1e7dd"))
+        item.setFont(QFont("Arial", 9, QFont.Bold))
+        self.setSpan(row, 0, 1, 9)
+        self.setItem(row, 0, item)
+
+    def _draw_task_row(self, row, task):
+        # Checkbox
+        chk = QCheckBox()
+        chk.setChecked(True)
+        w = QWidget()
+        layout = QHBoxLayout(w)
+        layout.addWidget(chk)
+        layout.setAlignment(Qt.AlignCenter)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setCellWidget(row, 0, w)
+        
+        # STT
+        self.setItem(row, 1, QTableWidgetItem(str(task.get('tt', ''))))
+        
+        # Các cột nội dung
+        cols = [2, 5, 6, 7, 8]
+        keys = ['task_name', 'tool', 'material', 'tckt', 'result']
+        for i, col in enumerate(cols):
+            te = AutoResizeTextEdit(str(task.get(keys[i], '')))
+            self.setCellWidget(row, col, te)
+            
+        self._setup_inputs(row, task)
+
+    def _setup_inputs(self, row, task):
+        # Cột 3: Số người
+        w_people = QWidget()
+        l_people = QHBoxLayout(w_people)
+        spin = QSpinBox()
+        spin.setValue(int(task.get('norm_workers', 1)))
+        l_people.addWidget(spin)
+        l_people.setContentsMargins(0,0,0,0)
+        self.setCellWidget(row, 3, w_people)
+        
+        # Cột 4: Thời gian
+        w_time = QWidget()
+        l_time = QHBoxLayout(w_time)
+        cb = QComboBox()
+        cb.addItems(["15", "30", "45", "60", "90"])
+        cb.setCurrentText(str(task.get('norm_minutes', '30')))
+        l_time.addWidget(cb)
+        l_time.setContentsMargins(0,0,0,0)
+        self.setCellWidget(row, 4, w_time)
+        
     def resizeRowsToContents(self):
+        # Thiết lập cơ bản
         super().resizeRowsToContents()
+        
+        # Duyệt qua từng hàng để điều chỉnh chiều cao
         for row in range(self.rowCount()):
-            max_height = 80 # Chiều cao tối thiểu
+            max_h = 40  # Chiều cao tối thiểu cho hàng
+            
             for col in range(self.columnCount()):
-                widget = self.cellWidget(row, col)
-                if isinstance(widget, AutoResizeTextEdit):
-                    max_height = max(max_height, widget.sizeHint().height())
-            self.setRowHeight(row, max_height)
+                w = self.cellWidget(row, col)
+                # Nếu ô này chứa AutoResizeTextEdit, lấy sizeHint của nó
+                if isinstance(w, AutoResizeTextEdit):
+                    # Cập nhật lại document width trước khi lấy sizeHint
+                    w.document().setTextWidth(self.columnWidth(col))
+                    h = w.sizeHint().height()
+                    if h > max_h:
+                        max_h = h
+            
+            # Cập nhật chiều cao hàng
+            self.setRowHeight(row, max_h + 10) # +10 để có khoảng đệm (padding)

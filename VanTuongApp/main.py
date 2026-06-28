@@ -106,22 +106,9 @@ class MainController(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Lỗi", str(e))
 
-    # Trong hàm xử lý hoặc sau khi chọn bộ lọc:
-def refresh_table_data(self):
-    """
-    Đẩy dữ liệu lên bảng kế hoạch
-    """
-
-    phieu = self.filter_widget.cb_phieu.currentText()
-    group = self.filter_widget.cb_group.currentText()
     
-    # 1. Lấy dữ liệu từ DB (Hàm này bạn cần viết trong PlanModel)
-    # Trả về list các dict: [{'name': '...', 'std_people': 2, ...}]
-    data = self.db.get_full_plan_details(phieu, group)
-    
-    # 2. Đẩy dữ liệu vào bảng
-    self.plan_table.populate_table(data)
-
+            
+        
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ class FilterWidget(QGroupBox):
         self.spin_nhan_vien.setRange(1, 100)
         self.spin_nhan_vien.setValue(1)
         
-        self.btn_tao_phieu = QPushButton("➕ Tạo phiếu công nghệ")
+        self.btn_tao_phieu = QPushButton("👁️ Xem Phiếu Công Nghệ BQDP - KSĐK")
         self.btn_tao_phieu.setStyleSheet("""
             QPushButton { background-color: #FFD700; color: black; font-weight: bold; border-radius: 4px; padding: 5px; }
             QPushButton:hover { background-color: #FFC107; }
@@ -64,7 +64,7 @@ class FilterWidget(QGroupBox):
         grid_layout.addWidget(self.cb_device, 1, 3)
         grid_layout.addWidget(QLabel("Số nhân viên:"), 1, 4)
         grid_layout.addWidget(self.spin_nhan_vien, 1, 5)
-        grid_layout.addWidget(self.btn_tao_phieu, 1, 6, 1, 2)
+        grid_layout.addWidget(self.btn_tao_phieu, 1, 7, 1, 1)
 
         main_v_layout = QVBoxLayout(self)
         main_v_layout.addLayout(grid_layout)
@@ -77,6 +77,8 @@ class FilterWidget(QGroupBox):
         
         self.cb_phieu.currentIndexChanged.connect(lambda: self.update_filters('phieu'))
         self.cb_group.currentIndexChanged.connect(lambda: self.update_filters('group'))
+
+        # self.btn_tao_phieu.clicked.connect(self.on_tao_phieu_clicked)
        
         self.init_data()
 
@@ -195,4 +197,29 @@ class FilterWidget(QGroupBox):
             self.cb_group.blockSignals(False)
             self.cb_phieu.blockSignals(False)
     
+    # Lấy các danh mực đã chọn để truyền cho table_plan
+    def get_filter_results(self):
+        """Trả về dictionary chứa cấu trúc dữ liệu theo yêu cầu"""
+        # Lấy danh sách trang bị từ ComboBox
+        trang_bi_list = []
+        for i in range(self.cb_device.count()):
+            ten_may = self.cb_device.itemText(i)
+            # Giả định số phiếu được lấy từ combo phiếu đang chọn
+            # Bạn có thể thay đổi logic này nếu DB của bạn cần truy vấn 
+            # số phiếu riêng cho từng máy
+            trang_bi_list.append({
+                "ten_may": ten_may,
+                "so_phieu": self.cb_phieu.currentText()
+            })
+
+        results = {
+            "nhom_thuc_hien": self.cb_group.currentText(),
+            "so_ngay_thuc_hien": self.spin_duration.value(),
+            "date_begin": self.date_start.date().toString("dd/MM/yyyy"),
+            "date_after": self.date_end.date().toString("dd/MM/yyyy"),
+            "so_nhan_vien": self.spin_nhan_vien.value(),
+            "trang_bi": trang_bi_list
+        }
+        return results
     
+   

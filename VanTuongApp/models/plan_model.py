@@ -543,4 +543,76 @@ class PlanModel:
             print(f"[ERROR] Database query failed: {e}")
             return []
     
-    
+    def get_norms_by_filter(self, filter_results):
+        """
+        Lấy dữ liệu từ bảng master_tasks thông qua các bảng liên quan.
+        Có bổ sung debug để truy vết lỗi cấu trúc dữ liệu.
+        """
+        # 1. DEBUG INPUT
+        print(f"[DEBUG MODEL] Bắt đầu truy vấn với filter_results: {filter_results}")
+        
+        trang_bi_list = filter_results.get('trang_bi', [])
+        if not trang_bi_list:
+            print("[DEBUG MODEL] CẢNH BÁO: trang_bi_list bị trống!")
+            return []
+        
+        ten_may_list = [item['ten_may'] for item in trang_bi_list if 'ten_may' in item]
+        print(f"[DEBUG MODEL] Danh sách máy lọc được: {ten_may_list}")
+        
+        if not ten_may_list:
+            print("[DEBUG MODEL] CẢNH BÁO: Không có tên máy nào hợp lệ trong trang_bi_list.")
+            return []
+            
+        nhom = filter_results.get('nhom_thuc_hien', '')
+        print(f"[DEBUG MODEL] Nhóm lọc được: {nhom}")
+        
+        # 2. Xây dựng SQL
+        placeholders = ', '.join(['?'] * len(ten_may_list))
+        query = f"""
+            SELECT 
+                d.device_name, t.tt, t.task_name, 
+                t.norm_workers, t.norm_minutes,
+                t.tool, t.material, t.tckt, t.result
+            FROM master_tasks t
+            JOIN maintenance_cycles mc ON t.cycle_id = mc.id
+            JOIN devices d ON mc.device_id = d.id
+            JOIN groups g ON d.group_id = g.id
+            WHERE d.device_name IN ({placeholders})
+        """
+        
+        params = ten_may_list
+        
+        if nhom and nhom != "-- Chọn nhóm --":
+            query += " AND g.group_name = ?"
+            params.append(nhom)
+            
+        print(f"[DEBUG MODEL] Câu lệnh SQL: {query}")
+        print(f"[DEBUG MODEL] Tham số truyền vào: {params}")
+            
+        # 3. Thực thi
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                
+                columns = [col[0] for col in cursor.description]
+                print(f"[DEBUG MODEL] Tên các cột: {columns}")
+                
+                results = []
+                for row in cursor.fetchall():
+                    # Chuyển row (tuple) thành dict
+                    row_dict = dict(zip(columns, row))
+                    results.append(row_dict)
+                
+                print(f"[DEBUG MODEL] Truy vấn thành công, trả về {len(results)} bản ghi.")
+                if len(results) > 0:
+                    print(f"[DEBUG MODEL] Mẫu bản ghi đầu tiên: {results[0]}")
+                    print(f"[DEBUG MODEL] Kiểu dữ liệu bản ghi đầu tiên: {type(results[0])}")
+                
+                return results
+                
+        except Exception as e:
+            print(f"[ERROR MODEL] Database query failed: {e}")
+            import traceback
+            traceback.print_exc() # In chi tiết lỗi nếu có
+            return []

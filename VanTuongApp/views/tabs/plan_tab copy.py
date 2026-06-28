@@ -1,116 +1,131 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel, QComboBox, QDateEdit, QPushButton, QTableWidget, QHeaderView
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QTableWidget, QHeaderView, QTableWidgetItem
+from views.components.plan_filter_widget import FilterWidget
+from views.components.plan_table_component import PlanTable
+from views.components.header_table import PlanHeaderWidget
 
-import config.app_config as cfg  # Nạp file cấu hình tập trung để đồng bộ bộ nhận diện
+import config.app_config as cfg
+ 
 
 class PlanTabWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, model, parent=None):
         super().__init__(parent)
+        self.model = model
+        self.deadlines = {}
+        
+        # Khởi tạo các thành phần
+        self.header = PlanHeaderWidget()
+        self.filter_widget = FilterWidget()
+        self.table = PlanTable(db=self.model)
+        
         self.init_ui()
-        
+        self.load_initial_data()
+
     def init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10) # Tạo khoảng cách viền cho thoáng
-        
-        # --- 1. KHỞI TẠO TAB WIDGET LỚN ---
+        main_layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
         self.tab_widget.setStyleSheet(cfg.TAB_BAR_STYLE)
         
-        # --- SUB-TAB 1: LẬP KẾ HOẠCH TRONG NGÀY ---
-        sub_tab_create = QWidget()
-        create_layout = QVBoxLayout(sub_tab_create)
-        create_layout.setContentsMargins(15, 15, 15, 15)
+        # --- TAB 1 ---
+        self.sub_tab_create = QWidget()
+        create_layout = QVBoxLayout(self.sub_tab_create)
         
-        filter_layout = QHBoxLayout()
-        self.cb_group = QComboBox()
-        self.cb_device = QComboBox()
-        self.cb_cycle = QComboBox()
-        
-        # Nút Tải Biểu Mẫu Gốc (Nạp style nút bấm vàng chỉ huy từ config)
-        self.btn_load = QPushButton("⚡ Tải Biểu Mẫu Gốc")
-        self.btn_load.setStyleSheet(cfg.BTN_PLAN_STYLE)
-        
-        self.date_edit = QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDate(QDate.currentDate())
-        self.date_edit.setDisplayFormat("dd/MM/yyyy")
-        
-        filter_layout.addWidget(QLabel("Ngày thực hiện:"))
-        filter_layout.addWidget(self.date_edit)
-        filter_layout.addWidget(QLabel("Nhóm:"))
-        filter_layout.addWidget(self.cb_group, 1)
-        filter_layout.addWidget(QLabel("Máy:"))
-        filter_layout.addWidget(self.cb_device, 2)
-        filter_layout.addWidget(QLabel("Phiếu:"))
-        filter_layout.addWidget(self.cb_cycle, 1)
-        filter_layout.addWidget(self.btn_load, 0)
-        create_layout.addLayout(filter_layout)
-        
-        # Khởi tạo bảng dữ liệu kế hoạch chính
-        self.table = QTableWidget()
-        self.table.setColumnCount(8)
-        self.table.setHorizontalHeaderLabels([
-            "Chọn làm", "STT", "Nội dung công việc bảo dưỡng", "Số người (ĐM)", 
-            "Thời gian (Phút)", "Phương tiện dụng cụ", "Vật tư kỹ thuật", "Tiêu chuẩn kỹ thuật (TCKT)"
-        ])
-        
-        # Nạp bộ style bảng biểu chuẩn hóa tập trung từ config
-        self.table.setStyleSheet(cfg.TABLE_WIDGET_STYLE)
-        
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.verticalHeader().setVisible(False)
+        create_layout.addWidget(self.filter_widget)
         create_layout.addWidget(self.table)
         
-        export_layout = QHBoxLayout()
-        self.btn_export = QPushButton("📥 XUẤT BÁO CÁO WORD KẾ HOẠCH NGÀY")
-        self.btn_export.setStyleSheet(cfg.BTN_PLAN_STYLE)
-        export_layout.addStretch()
-        export_layout.addWidget(self.btn_export)
-        create_layout.addLayout(export_layout)
+        # --- TAB 2 & 3 ---
+        self.setup_history_tab()
+        self.setup_stats_tab()
         
-        # --- SUB-TAB 2: LỊCH SỬ KẾ HOẠCH ---
-        sub_tab_history = QWidget()
-        history_layout = QVBoxLayout(sub_tab_history)
-        history_layout.setContentsMargins(15, 15, 15, 15)
-        
-        lbl_hist_info = QLabel("📜 Danh sách các file kế hoạch, nhật ký bảo dưỡng đã xuất bản ghi nhận trong hệ thống:")
-        lbl_hist_info.setStyleSheet(f"font-weight: bold; color: {cfg.COLOR_BG_BRAND}; font-size: {cfg.FONT_SIZE_REGULAR};")
-        
-        self.table_history = QTableWidget()
-        self.table_history.setColumnCount(4)
-        self.table_history.setHorizontalHeaderLabels(["Ngày lập", "Tên thiết bị máy móc", "Loại phiếu bảo dưỡng", "Đường dẫn file lưu trữ"])
-        
-        # Tái sử dụng cấu hình bảng tập trung
-        self.table_history.setStyleSheet(cfg.TABLE_WIDGET_STYLE)
-        self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        history_layout.addWidget(lbl_hist_info)
-        history_layout.addWidget(self.table_history)
-        
-        # --- SUB-TAB 3: THỐNG KÊ THEO NĂM ---
-        sub_tab_stats = QWidget()
-        stats_layout = QVBoxLayout(sub_tab_stats)
-        stats_layout.setContentsMargins(15, 15, 15, 15)
-        
-        lbl_stats_info = QLabel("📊 Thống kê chất lượng công tác bảo quản, bảo dưỡng kỹ thuật theo từng năm:")
-        lbl_stats_info.setStyleSheet(f"font-weight: bold; color: {cfg.COLOR_BG_BRAND}; font-size: {cfg.FONT_SIZE_REGULAR};")
-        
-        self.table_stats = QTableWidget()
-        self.table_stats.setColumnCount(4)
-        self.table_stats.setHorizontalHeaderLabels(["Năm", "Tổng số giờ bảo dưỡng", "Số lượt trang bị hoàn thành", "Tỷ lệ đạt chuẩn TCKT (%)"])
-        
-        # Tái sử dụng cấu hình bảng tập trung
-        self.table_stats.setStyleSheet(cfg.TABLE_WIDGET_STYLE)
-        self.table_stats.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        stats_layout.addWidget(lbl_stats_info)
-        stats_layout.addWidget(self.table_stats)
+        self.tab_widget.addTab(self.sub_tab_create, "⚡ Lập kế hoạch")
+        self.tab_widget.addTab(self.sub_tab_history, "📜 Lịch sử")
+        self.tab_widget.addTab(self.sub_tab_stats, "📊 Thống kê")
+        main_layout.addWidget(self.tab_widget)
 
-        # =====================================================================
-        # 🔩 LẮP RÁP CÁC SUB-TAB VÀO KHUNG CHÍNH ĐỂ GIỮ BỘ NHỚ C++ AN TOÀN
-        # =====================================================================
-        self.tab_widget.addTab(sub_tab_create, "⚡ Lập kế hoạch")
-        self.tab_widget.addTab(sub_tab_history, "📜 Lịch sử kế hoạch")
-        self.tab_widget.addTab(sub_tab_stats, "📊 Thống kê năm")
+        # KẾT NỐI SỰ KIỆN TẠI ĐÂY
+        # Khi bộ lọc thay đổi, vừa cập nhật định mức vừa cập nhật bảng
+        self.filter_widget.cb_phieu.currentIndexChanged.connect(self.on_phieu_changed)
+        self.filter_widget.cb_phieu.currentIndexChanged.connect(self.refresh_plan_table)
+        self.filter_widget.cb_group.currentIndexChanged.connect(self.refresh_plan_table)
+
+    def load_initial_data(self):
+        """Nạp dữ liệu từ Database vào bộ lọc."""
+        # Nạp tên phiếu
+        if hasattr(self.model, 'get_all_phieu_names'):
+            phieu_items = self.model.get_all_phieu_names() or []
+            self.filter_widget.cb_phieu.blockSignals(True)
+            self.filter_widget.cb_phieu.clear()
+            self.filter_widget.cb_phieu.addItem("-- Chọn phiếu BQDP --")
+            self.filter_widget.cb_phieu.addItems([str(i) for i in phieu_items if i])
+            self.filter_widget.cb_phieu.blockSignals(False)
+            
+            # Load deadlines
+            for p in phieu_items:
+                val = self.model.get_setting(f"deadline_{p}", "0")
+                self.deadlines[str(p)] = int(val) if val.isdigit() else 0
+
+        # Nạp danh mục nhóm
+        if hasattr(self.model, 'get_all_norms'):
+            groups = self.model.get_all_norms() or []
+            self.filter_widget.cb_group.blockSignals(True)
+            self.filter_widget.cb_group.clear()
+            self.filter_widget.cb_group.addItem("Tất cả các nhóm")
+            self.filter_widget.cb_group.addItems([str(g) for g in groups if g])
+            self.filter_widget.cb_group.blockSignals(False)
+
+    def on_phieu_changed(self, index):
+        """Cập nhật số ngày thực hiện khi chọn phiếu."""
+        selected_phieu = self.filter_widget.cb_phieu.currentText()
+        if selected_phieu in self.deadlines:
+            self.filter_widget.spin_duration.blockSignals(True)
+            self.filter_widget.spin_duration.setValue(self.deadlines[selected_phieu])
+            self.filter_widget.spin_duration.blockSignals(False)
+            self.filter_widget.update_logic('duration')
+
+    # def refresh_plan_table(self):
+    #     """Lấy dữ liệu từ Model và đổ vào bảng."""
+    #     phieu = self.filter_widget.cb_phieu.currentText()
+    #     group = self.filter_widget.cb_group.currentText()
         
-        layout.addWidget(self.tab_widget)
+    #     # Xử lý giá trị mặc định cho Model
+    #     phieu_val = phieu if phieu != "-- Chọn phiếu BQDP --" else None
+    #     group_val = group if group != "Tất cả các nhóm" else None
+        
+    #     try:
+    #         data = self.model.get_tasks_by_filter(group_val, phieu_val)
+    #         self.table.populate_table(data)
+    #     except Exception as e:
+    #         print(f"[ERROR] Không thể refresh bảng kế hoạch: {e}")
+
+    def refresh_plan_table(self):
+        # Lấy dữ liệu filter hiện tại
+        filter_data = self.filter_widget.get_filter_results()
+        
+        # Kiểm tra: Nếu nhóm là mặc định thì không làm gì cả
+        nhom = filter_data.get('nhom_thuc_hien')
+        if nhom in ["-- Chọn nhóm --", "Tất cả các nhóm", ""]:
+            print("Người dùng chưa chọn nhóm hợp lệ, bỏ qua cập nhật.")
+            return 
+
+        # Nếu đã chọn nhóm -> Tiến hành cập nhật
+        try:
+            tasks_data = self.model.get_tasks_by_filter(nhom, filter_data.get('so_phieu'))
+            payload = {"tasks": tasks_data, "metadata": filter_data}
+            self.table.populate_table(payload)
+        except Exception as e:
+            print(f"Lỗi: {e}")
+
+
+
+    def setup_history_tab(self):
+        self.sub_tab_history = QWidget()
+        layout = QVBoxLayout(self.sub_tab_history)
+        self.table_history = QTableWidget(0, 4)
+        self.table_history.setHorizontalHeaderLabels(["Ngày lập", "Thiết bị", "Loại phiếu", "File"])
+        layout.addWidget(self.table_history)
+
+    def setup_stats_tab(self):
+        self.sub_tab_stats = QWidget()
+        layout = QVBoxLayout(self.sub_tab_stats)
+        self.table_stats = QTableWidget(0, 4)
+        self.table_stats.setHorizontalHeaderLabels(["Năm", "Tổng giờ BD", "Số lượt", "Tỷ lệ (%)"])
+        layout.addWidget(self.table_stats)

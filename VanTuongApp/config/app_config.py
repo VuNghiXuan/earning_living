@@ -2,7 +2,7 @@
 # 📋 THÔNG TIN DOANH NGHIỆP & ỨNG DỤNG
 # =====================================================================
 COMPANY_NAME = "⭐QUÂN CHỦNG HẢI QUÂN"
-DEPARTMENT_NAME = "Lữ đoàn 189"
+DEPARTMENT_NAME = "✨Lữ đoàn 189"
 APP_NAME = "ÚNG DỰNG QUẢN LÝ"
 MISSION_NAME = "Công tác: Bảo quản dự phòng, kiểm sửa định kỳ đối với trang bị Tàu ngầm Kilo 636"
 
@@ -347,3 +347,4 @@ MENU_ITEM_COLLAPSED_SELECTED_STYLE = f"""
         text-align: center;
     }}
 """
+
